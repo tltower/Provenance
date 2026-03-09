@@ -1,0 +1,74 @@
+{
+  "posts": [
+    {
+      "post_id": "6hfGNLf4Hg5DXqJCF",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/6hfGNLf4Hg5DXqJCF/raw.json",
+      "slug": "a-fable-of-science-and-politics",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/6hfGNLf4Hg5DXqJCF/text.txt",
+      "title": "A Fable of Science and Politics"
+    },
+    {
+      "post_id": "7ZqGiPHTpiDMwqMN2",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/7ZqGiPHTpiDMwqMN2/raw.json",
+      "slug": "twelve-virtues-of-rationality",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/7ZqGiPHTpiDMwqMN2/text.txt",
+      "title": "Twelve Virtues of Rationality"
+    },
+    {
+      "post_id": "GrDqnMjhqoxiqpQPw",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/GrDqnMjhqoxiqpQPw/raw.json",
+      "slug": "the-proper-use-of-humility",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/GrDqnMjhqoxiqpQPw/text.txt",
+      "title": "The Proper Use of Humility"
+    },
+    {
+      "post_id": "NKECtGX4RZPd7SqYp",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/NKECtGX4RZPd7SqYp/raw.json",
+      "slug": "the-modesty-argument",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/NKECtGX4RZPd7SqYp/text.txt",
+      "title": "The Modesty Argument"
+    },
+    {
+      "post_id": "Pm83rA8MTYYeR4Ci4",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/Pm83rA8MTYYeR4Ci4/raw.json",
+      "slug": "i-don-t-know",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/Pm83rA8MTYYeR4Ci4/text.txt",
+      "title": "\"I don't know.\""
+    },
+    {
+      "post_id": "XTXWPQSEgoMkAupKt",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/XTXWPQSEgoMkAupKt/raw.json",
+      "slug": "an-intuitive-explanation-of-bayes-s-theorem",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/XTXWPQSEgoMkAupKt/text.txt",
+      "title": "An Intuitive Explanation of Bayes's Theorem"
+    },
+    {
+      "post_id": "YshRbqZHYFoEMqFAu",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/YshRbqZHYFoEMqFAu/raw.json",
+      "slug": "why-truth",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/YshRbqZHYFoEMqFAu/text.txt",
+      "title": "Why Truth?"
+    },
+    {
+      "post_id": "afmj8TKAqH6F2QMfZ",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/afmj8TKAqH6F2QMfZ/raw.json",
+      "slug": "a-technical-explanation-of-technical-explanation",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/afmj8TKAqH6F2QMfZ/text.txt",
+      "title": "A Technical Explanation of Technical Explanation"
+    },
+    {
+      "post_id": "jnZbHi873v9vcpGpZ",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/jnZbHi873v9vcpGpZ/raw.json",
+      "slug": "what-s-a-bias",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/jnZbHi873v9vcpGpZ/text.txt",
+      "title": "What's a Bias?"
+    },
+    {
+      "post_id": "teaxCFgtmCQ3E9fy8",
+      "raw_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/teaxCFgtmCQ3E9fy8/raw.json",
+      "slug": "the-martial-art-of-rationality",
+      "text_path": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/posts/teaxCFgtmCQ3E9fy8/text.txt",
+      "title": "The Martial Art of Rationality"
+    }
+  ]
+}

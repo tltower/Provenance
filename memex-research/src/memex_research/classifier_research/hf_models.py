@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+from typing import Any
+
+SUPPORTED_SEQUENCE_MODELS = {
+    "microsoft/deberta-v3-base",
+    "allenai/scibert_scivocab_uncased",
+}
+SUPPORTED_TOKEN_MODELS = {"microsoft/deberta-v3-base"}
+SUPPORTED_PROBE_MODELS = {"meta-llama/Llama-3.1-8B"}
+
+
+def _require_ml_stack() -> tuple[Any, Any]:
+    try:
+        import torch  # type: ignore[import-not-found]
+        import transformers  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - dependency is optional locally
+        raise RuntimeError(
+            "ML research dependencies are not installed. Install the research extra with "
+            "`pip install -e .[research]` in Colab or a local ML environment."
+        ) from exc
+    return torch, transformers
+
+
+def _validate_model_name(model_name: str, *, allowed: set[str], purpose: str) -> None:
+    if model_name not in allowed:
+        supported = ", ".join(sorted(allowed))
+        raise ValueError(f"Unsupported {purpose} model {model_name!r}. Expected one of: {supported}")
+
+
+def get_tokenizer(model_name: str) -> Any:
+    _torch, transformers = _require_ml_stack()
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token or tokenizer.unk_token
+    return tokenizer
+
+
+def create_sequence_classification_components(
+    *,
+    model_name: str,
+    labels: tuple[str, ...],
+) -> tuple[Any, Any]:
+    _validate_model_name(model_name, allowed=SUPPORTED_SEQUENCE_MODELS, purpose="sequence-classification")
+    _torch, transformers = _require_ml_stack()
+    tokenizer = get_tokenizer(model_name)
+    model = transformers.AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=len(labels),
+        id2label={index: label for index, label in enumerate(labels)},
+        label2id={label: index for index, label in enumerate(labels)},
+    )
+    return tokenizer, model
+
+
+def create_token_classification_components(
+    *,
+    model_name: str,
+    labels: tuple[str, ...],
+) -> tuple[Any, Any]:
+    _validate_model_name(model_name, allowed=SUPPORTED_TOKEN_MODELS, purpose="token-classification")
+    _torch, transformers = _require_ml_stack()
+    tokenizer = get_tokenizer(model_name)
+    model = transformers.AutoModelForTokenClassification.from_pretrained(
+        model_name,
+        num_labels=len(labels),
+        id2label={index: label for index, label in enumerate(labels)},
+        label2id={label: index for index, label in enumerate(labels)},
+    )
+    return tokenizer, model
+
+
+def create_probe_components(model_name: str) -> tuple[Any, Any]:
+    _validate_model_name(model_name, allowed=SUPPORTED_PROBE_MODELS, purpose="probe")
+    _torch, transformers = _require_ml_stack()
+    tokenizer = get_tokenizer(model_name)
+    model = transformers.AutoModel.from_pretrained(model_name, output_hidden_states=True)
+    return tokenizer, model
