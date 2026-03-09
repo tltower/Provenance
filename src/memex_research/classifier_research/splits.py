@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -99,3 +100,29 @@ def load_jsonl_splits(input_dir: Path) -> dict[str, list[dict[str, Any]]]:
     if "train" not in splits or "test" not in splits:
         raise RuntimeError(f"Expected at least train.jsonl and test.jsonl in {input_dir}")
     return splits
+
+
+def ensure_dev_split(
+    split_rows: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    dev_fraction: float,
+    seed: int,
+) -> dict[str, list[dict[str, Any]]]:
+    normalized = {split: [dict(row) for row in rows] for split, rows in split_rows.items()}
+    if "dev" in normalized or dev_fraction <= 0:
+        return normalized
+    train_rows = list(normalized.get("train", []))
+    if len(train_rows) < 2:
+        return normalized
+
+    dev_size = max(1, int(round(len(train_rows) * dev_fraction)))
+    dev_size = min(dev_size, len(train_rows) - 1)
+
+    indices = list(range(len(train_rows)))
+    rng = random.Random(seed)
+    rng.shuffle(indices)
+    dev_indices = set(indices[:dev_size])
+
+    normalized["train"] = [row for idx, row in enumerate(train_rows) if idx not in dev_indices]
+    normalized["dev"] = [row for idx, row in enumerate(train_rows) if idx in dev_indices]
+    return normalized

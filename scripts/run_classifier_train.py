@@ -33,6 +33,7 @@ def main() -> None:
     parser.add_argument("--per-device-eval-batch-size", type=int, default=8)
     parser.add_argument("--num-train-epochs", type=float, default=3.0)
     parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--warmup-ratio", type=float, default=0.06)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--run-transfer", action="store_true")
     parser.add_argument("--skip-transfer", action="store_true", help=argparse.SUPPRESS)
@@ -52,6 +53,7 @@ def main() -> None:
             per_device_eval_batch_size=args.per_device_eval_batch_size,
             num_train_epochs=args.num_train_epochs,
             weight_decay=args.weight_decay,
+            warmup_ratio=args.warmup_ratio,
             seed=args.seed,
         )
         if args.run_transfer and not args.skip_transfer:
@@ -72,6 +74,7 @@ def main() -> None:
             per_device_eval_batch_size=args.per_device_eval_batch_size,
             num_train_epochs=args.num_train_epochs,
             weight_decay=args.weight_decay,
+            warmup_ratio=args.warmup_ratio,
             seed=args.seed,
         )
         if args.run_transfer and not args.skip_transfer:

@@ -2,16 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-SUPPORTED_SEQUENCE_MODELS = {
-    "microsoft/deberta-v3-base",
-    "allenai/scibert_scivocab_uncased",
+MODEL_REGISTRY = {
+    "sequence-classification": {
+        "microsoft/deberta-v3-base",
+        "allenai/scibert_scivocab_uncased",
+    },
+    "token-classification": {
+        "microsoft/deberta-v3-base",
+    },
+    "probe": {
+        "meta-llama/Llama-3.1-8B",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "mistralai/Mistral-7B-v0.3",
+    },
 }
-SUPPORTED_TOKEN_MODELS = {"microsoft/deberta-v3-base"}
-SUPPORTED_PROBE_MODELS = {
-    "meta-llama/Llama-3.1-8B",
-    "Qwen/Qwen2.5-7B-Instruct",
-    "mistralai/Mistral-7B-v0.3",
-}
+SUPPORTED_SEQUENCE_MODELS = MODEL_REGISTRY["sequence-classification"]
+SUPPORTED_TOKEN_MODELS = MODEL_REGISTRY["token-classification"]
+SUPPORTED_PROBE_MODELS = MODEL_REGISTRY["probe"]
 
 
 def _require_ml_stack() -> tuple[Any, Any]:

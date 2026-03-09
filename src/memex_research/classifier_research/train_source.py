@@ -117,6 +117,7 @@ def train_source_classifier(
     per_device_eval_batch_size: int = 8,
     num_train_epochs: float = 3.0,
     weight_decay: float = 0.01,
+    warmup_ratio: float = 0.06,
     seed: int = 17,
 ) -> dict[str, Any]:
     _np, _torch, _metrics, trainer_libs = _require_training_stack()
@@ -150,6 +151,7 @@ def train_source_classifier(
         per_device_eval_batch_size=per_device_eval_batch_size,
         num_train_epochs=num_train_epochs,
         weight_decay=weight_decay,
+        warmup_ratio=warmup_ratio,
         seed=seed,
         report_to=[],
         remove_unused_columns=False,
@@ -213,6 +215,7 @@ def train_source_classifier(
                 "per_device_eval_batch_size": per_device_eval_batch_size,
                 "num_train_epochs": num_train_epochs,
                 "weight_decay": weight_decay,
+                "warmup_ratio": warmup_ratio,
                 "seed": seed,
                 "label_list": list(SOURCE_MATERIALITY_LABELS),
             },

@@ -129,6 +129,15 @@ def test_run_probe_experiment_dispatches_source_probe_and_transfer(
     assert '"best_layer": 12' in out
 
 
+def test_parse_layers_helper() -> None:
+    script_path = _repo_root() / "scripts" / "run_probe_experiment.py"
+    module = _load_module("run_probe_experiment_parse_layers_test", script_path)
+
+    assert module._parse_layers(None) is None
+    assert module._parse_layers("") is None
+    assert module._parse_layers("1, 3,5") == (1, 3, 5)
+
+
 def test_run_probe_experiment_skips_transfer_by_default(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:

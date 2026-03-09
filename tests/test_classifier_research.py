@@ -13,6 +13,7 @@ from memex_research.classifier_research.hf_models import SUPPORTED_PROBE_MODELS
 from memex_research.classifier_research.reporting import write_run_reports
 from memex_research.classifier_research.splits import (
     discover_named_splits,
+    ensure_dev_split,
     load_jsonl_splits,
     write_split_jsonl,
 )
@@ -70,6 +71,17 @@ def test_normalize_pe_span_record_labels_claim_and_premise_tokens() -> None:
     assert len(record["tokens"]) == len(record["labels"])
 
 
+def test_normalize_pe_span_record_rejects_unaligned_annotation_span() -> None:
+    text = "Cats are great."
+    annotation_text = "T1\tClaim 4 5\t "
+    try:
+        normalize_pe_span_record("doc-bad", text, annotation_text)
+    except ValueError as exc:
+        assert "did not align" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected misaligned annotation to raise.")
+
+
 def test_discover_named_splits_uses_standard_subdirectories(tmp_path: Path) -> None:
     train_dir = tmp_path / "train"
     test_dir = tmp_path / "test"
@@ -93,6 +105,18 @@ def test_write_and_load_jsonl_splits_roundtrip(tmp_path: Path) -> None:
     assert summary["counts"]["train"] == 1
     loaded = load_jsonl_splits(tmp_path)
     assert loaded["test"][0]["id"] == "test-1"
+
+
+def test_ensure_dev_split_creates_deterministic_holdout() -> None:
+    split_rows = {
+        "train": [{"id": f"train-{index}"} for index in range(10)],
+        "test": [{"id": "test-1"}],
+    }
+    split_a = ensure_dev_split(split_rows, dev_fraction=0.2, seed=17)
+    split_b = ensure_dev_split(split_rows, dev_fraction=0.2, seed=17)
+    assert len(split_a["dev"]) == 2
+    assert len(split_a["train"]) == 8
+    assert [row["id"] for row in split_a["dev"]] == [row["id"] for row in split_b["dev"]]
 
 
 def test_transfer_manifest_points_to_existing_seed_posts() -> None:

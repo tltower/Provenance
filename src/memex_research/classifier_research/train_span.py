@@ -9,7 +9,7 @@ from memex_research.classifier_research.hf_models import (
     create_token_classification_components,
 )
 from memex_research.classifier_research.reporting import write_run_reports
-from memex_research.classifier_research.splits import load_jsonl_splits
+from memex_research.classifier_research.splits import ensure_dev_split, load_jsonl_splits
 from memex_research.classifier_research.tasks import SPAN_ROLE_LABELS
 
 
@@ -158,14 +158,15 @@ def train_span_classifier(
     per_device_eval_batch_size: int = 8,
     num_train_epochs: float = 3.0,
     weight_decay: float = 0.01,
+    warmup_ratio: float = 0.06,
     seed: int = 17,
 ) -> dict[str, Any]:
     _np, _torch, _metrics, trainer_libs = _require_training_stack()
     DataCollatorForTokenClassification, Trainer, TrainingArguments = trainer_libs
 
-    split_rows = load_jsonl_splits(input_dir)
+    split_rows = ensure_dev_split(load_jsonl_splits(input_dir), dev_fraction=0.1, seed=seed)
     train_rows = split_rows["train"]
-    eval_rows = split_rows.get("dev") or split_rows["test"]
+    eval_rows = split_rows["dev"]
     test_rows = split_rows["test"]
 
     tokenizer, model = create_token_classification_components(model_name=model_name, labels=SPAN_ROLE_LABELS)
@@ -188,6 +189,7 @@ def train_span_classifier(
         per_device_eval_batch_size=per_device_eval_batch_size,
         num_train_epochs=num_train_epochs,
         weight_decay=weight_decay,
+        warmup_ratio=warmup_ratio,
         seed=seed,
         report_to=[],
         remove_unused_columns=False,
@@ -251,6 +253,7 @@ def train_span_classifier(
                 "per_device_eval_batch_size": per_device_eval_batch_size,
                 "num_train_epochs": num_train_epochs,
                 "weight_decay": weight_decay,
+                "warmup_ratio": warmup_ratio,
                 "seed": seed,
                 "label_list": list(SPAN_ROLE_LABELS),
             },

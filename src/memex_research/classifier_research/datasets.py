@@ -130,6 +130,43 @@ def _spans_overlap(token_start: int, token_end: int, span_start: int, span_end: 
     return token_start < span_end and span_start < token_end
 
 
+def _validate_tokenization(text: str, token_offsets: Sequence[tuple[str, int, int]], *, doc_id: str) -> None:
+    covered = [False] * len(text)
+    for _token, start, end in token_offsets:
+        for position in range(start, end):
+            covered[position] = True
+    uncovered_positions = [
+        index for index, character in enumerate(text) if not character.isspace() and not covered[index]
+    ]
+    if uncovered_positions:
+        first = uncovered_positions[0]
+        snippet = text[max(0, first - 20) : first + 20]
+        raise ValueError(
+            f"Tokenization left uncovered non-whitespace text in document {doc_id!r} near offset {first}: {snippet!r}"
+        )
+
+
+def _validate_annotation_alignment(
+    token_offsets: Sequence[tuple[str, int, int]],
+    annotations: Sequence[tuple[str, Sequence[tuple[int, int]]]],
+    *,
+    doc_id: str,
+) -> None:
+    missing: list[tuple[str, int, int]] = []
+    for label, spans in annotations:
+        for start, end in spans:
+            if not any(
+                _spans_overlap(token_start, token_end, start, end)
+                for _token, token_start, token_end in token_offsets
+            ):
+                missing.append((label, start, end))
+    if missing:
+        preview = ", ".join(f"{label}@{start}:{end}" for label, start, end in missing[:5])
+        raise ValueError(
+            f"Annotation spans did not align to any token in document {doc_id!r}: {preview}"
+        )
+
+
 def label_tokens_from_annotations(
     text: str,
     annotations: list[tuple[str, list[tuple[int, int]]]],
@@ -147,6 +184,9 @@ def label_tokens_from_annotations(
 
 def normalize_pe_span_record(doc_id: str, text: str, annotation_text: str) -> SpanRoleExample:
     annotations = parse_brat_text_annotations(annotation_text)
+    token_offsets = tokenize_with_offsets(text)
+    _validate_tokenization(text, token_offsets, doc_id=doc_id)
+    _validate_annotation_alignment(token_offsets, annotations, doc_id=doc_id)
     tokens, labels = label_tokens_from_annotations(text, annotations)
     for label in labels:
         if label not in SPAN_ROLE_LABELS:

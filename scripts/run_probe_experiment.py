@@ -17,6 +17,12 @@ from memex_research.classifier_research.transfer_eval import (
 )
 
 
+def _parse_layers(value: str | None) -> tuple[int, ...] | None:
+    if value is None or not value.strip():
+        return None
+    return tuple(int(chunk.strip()) for chunk in value.split(",") if chunk.strip())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", choices=[TASK_SPAN_ROLE, TASK_SOURCE_MATERIALITY], required=True)
@@ -25,6 +31,7 @@ def main() -> None:
     parser.add_argument("--input-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--max-length", type=int, default=256)
+    parser.add_argument("--layers", type=str, default=None, help="Comma-separated layer indices to probe.")
     parser.add_argument("--run-transfer", action="store_true")
     parser.add_argument("--skip-transfer", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--transfer-manifest", type=Path, default=DEFAULT_TRANSFER_MANIFEST)
@@ -37,6 +44,7 @@ def main() -> None:
         output_dir=args.output_dir,
         model_name=args.model_name,
         max_length=args.max_length,
+        layers=_parse_layers(args.layers),
     )
 
     if args.run_transfer and not args.skip_transfer:
