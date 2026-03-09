@@ -1,0 +1,118 @@
+{
+  "bundle": "claude_sprint1_remote_bundle_20260309",
+  "date": "2026-03-09",
+  "project_root": "/Users/tatetower/Codex/memex-research",
+  "summary": {
+    "remote_provider": "RunPod",
+    "remote_gpu": "NVIDIA A100 80GB PCIe",
+    "deberta_scicite": {
+      "model_name": "microsoft/deberta-v3-base",
+      "accuracy": 0.8699623858140785,
+      "f1_macro": 0.8698225228350098,
+      "precision_macro": 0.8701865326865328,
+      "recall_macro": 0.8720739765593075,
+      "counts": {
+        "train": 8243,
+        "eval": 916,
+        "test": 1861
+      }
+    },
+    "scibert_scicite": {
+      "model_name": "allenai/scibert_scivocab_uncased",
+      "accuracy": 0.8742611499193982,
+      "f1_macro": 0.8738283151380293,
+      "precision_macro": 0.8734080303324907,
+      "recall_macro": 0.8745420288643708,
+      "counts": {
+        "train": 8243,
+        "eval": 916,
+        "test": 1861
+      }
+    },
+    "transfer_candidate_counts": {
+      "posts_with_candidates": 6,
+      "total_candidates": 69
+    }
+  },
+  "per_post_candidate_counts": [
+    {
+      "post_id": "6hfGNLf4Hg5DXqJCF",
+      "title": "A Fable of Science and Politics",
+      "candidate_count": 0
+    },
+    {
+      "post_id": "7ZqGiPHTpiDMwqMN2",
+      "title": "Twelve Virtues of Rationality",
+      "candidate_count": 6
+    },
+    {
+      "post_id": "GrDqnMjhqoxiqpQPw",
+      "title": "The Proper Use of Humility",
+      "candidate_count": 4
+    },
+    {
+      "post_id": "NKECtGX4RZPd7SqYp",
+      "title": "The Modesty Argument",
+      "candidate_count": 6
+    },
+    {
+      "post_id": "Pm83rA8MTYYeR4Ci4",
+      "title": "\"I don't know.\"",
+      "candidate_count": 0
+    },
+    {
+      "post_id": "XTXWPQSEgoMkAupKt",
+      "title": "An Intuitive Explanation of Bayes's Theorem",
+      "candidate_count": 7
+    },
+    {
+      "post_id": "YshRbqZHYFoEMqFAu",
+      "title": "Why Truth?",
+      "candidate_count": 0
+    },
+    {
+      "post_id": "afmj8TKAqH6F2QMfZ",
+      "title": "A Technical Explanation of Technical Explanation",
+      "candidate_count": 45
+    },
+    {
+      "post_id": "jnZbHi873v9vcpGpZ",
+      "title": "What's a Bias?",
+      "candidate_count": 0
+    },
+    {
+      "post_id": "teaxCFgtmCQ3E9fy8",
+      "title": "The Martial Art of Rationality",
+      "candidate_count": 1
+    }
+  ],
+  "remote_issues": [
+    "absolute local paths in transfer manifest and tests",
+    "transformers TrainingArguments API mismatch",
+    "missing runtime dependencies: protobuf and accelerate",
+    "transfer pass defaulted to CPU until patched",
+    "probe path blocked by gated HF model access and hardcoded allowlist",
+    "initial remote downlink attempt produced an oversized archive and was aborted"
+  ],
+  "local_files": {
+    "bundle_readme": "/Users/tatetower/Codex/memex-research/analysis/claude_sprint1_remote_bundle_20260309/README.md",
+    "project_readme": "/Users/tatetower/Codex/memex-research/README.md",
+    "runbook": "/Users/tatetower/Codex/memex-research/scripts/README.md",
+    "makefile": "/Users/tatetower/Codex/memex-research/Makefile",
+    "bootstrap_script": "/Users/tatetower/Codex/memex-research/scripts/bootstrap_remote.sh",
+    "scicite_runner": "/Users/tatetower/Codex/memex-research/scripts/run_scicite_source_experiment.py",
+    "inventory_script": "/Users/tatetower/Codex/memex-research/scripts/report_run_inventory.py",
+    "package_script": "/Users/tatetower/Codex/memex-research/scripts/package_run_artifacts.py",
+    "train_source": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/train_source.py",
+    "transfer_eval": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/transfer_eval.py",
+    "hf_models": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/hf_models.py",
+    "artifacts": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/artifacts.py"
+  },
+  "status": {
+    "practical_classifier_track": "working",
+    "transfer_adapter": "insufficient",
+    "probe_track": "unblocked_locally_but_not_yet_rerun",
+    "artifact_export": "inventory_and_packaging_added_locally_not_yet_retested_remotely"
+  },
+  "note": "Remote run artifacts were not fully synced back before pod shutdown. Metric values in this manifest were transcribed from the successful remote terminal outputs. The local repo now includes diagnostics, inventory, and selective packaging so the next remote session can export cleanly."
+}

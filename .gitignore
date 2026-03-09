@@ -1,0 +1,14 @@
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+__pycache__/
+*.pyc
+*.egg-info/
+
+analysis/memex_runs/
+analysis/run_inventory/
+analysis/packaged_runs/
+
+*.tar.gz

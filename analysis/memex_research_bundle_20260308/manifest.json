@@ -1,0 +1,51 @@
+{
+  "status": "pending_runs",
+  "bundle_date": "2026-03-08",
+  "implementation_complete": true,
+  "benchmark_scope": {
+    "span_role": {
+      "dataset": "pe",
+      "models": [
+        "microsoft/deberta-v3-base",
+        "meta-llama/Llama-3.1-8B"
+      ]
+    },
+    "source_materiality": {
+      "dataset": "scicite",
+      "models": [
+        "microsoft/deberta-v3-base",
+        "allenai/scibert_scivocab_uncased",
+        "meta-llama/Llama-3.1-8B"
+      ]
+    }
+  },
+  "transfer_manifest": "/Users/tatetower/Codex/memex-research/analysis/memex_transfer_seed_10/manifest.json",
+  "core_files": {
+    "tasks": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/tasks.py",
+    "datasets": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/datasets.py",
+    "splits": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/splits.py",
+    "hf_models": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/hf_models.py",
+    "train_span": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/train_span.py",
+    "train_source": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/train_source.py",
+    "probes": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/probes.py",
+    "transfer_eval": "/Users/tatetower/Codex/memex-research/src/memex_research/classifier_research/transfer_eval.py"
+  },
+  "scripts": {
+    "prepare_pe": "/Users/tatetower/Codex/memex-research/scripts/prepare_pe_span_benchmark.py",
+    "prepare_scicite": "/Users/tatetower/Codex/memex-research/scripts/prepare_scicite_material_use_benchmark.py",
+    "run_classifier_train": "/Users/tatetower/Codex/memex-research/scripts/run_classifier_train.py",
+    "run_probe_experiment": "/Users/tatetower/Codex/memex-research/scripts/run_probe_experiment.py"
+  },
+  "suggested_output_roots": {
+    "pe_deberta": "/Users/tatetower/Codex/memex-research/analysis/memex_runs/pe_deberta",
+    "scicite_deberta": "/Users/tatetower/Codex/memex-research/analysis/memex_runs/scicite_deberta",
+    "scicite_scibert": "/Users/tatetower/Codex/memex-research/analysis/memex_runs/scicite_scibert",
+    "pe_probe_llama31_8b": "/Users/tatetower/Codex/memex-research/analysis/memex_runs/pe_probe_llama31_8b",
+    "scicite_probe_llama31_8b": "/Users/tatetower/Codex/memex-research/analysis/memex_runs/scicite_probe_llama31_8b"
+  },
+  "local_validation": {
+    "mypy": "Success: no issues found in 16 source files",
+    "ruff": "All checks passed!",
+    "pytest": "10 passed in 0.06s"
+  }
+}
