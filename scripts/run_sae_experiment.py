@@ -21,7 +21,7 @@ def _parse_layers(value: str | None) -> tuple[int, ...] | None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", choices=[TASK_SPAN_ROLE, TASK_SOURCE_MATERIALITY], required=True)
-    parser.add_argument("--dataset", choices=["pe", "scicite"], required=True)
+    parser.add_argument("--dataset", choices=["pe", "cdcp", "scicite"], required=True)
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--input-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)

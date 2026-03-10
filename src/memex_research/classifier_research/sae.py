@@ -30,16 +30,17 @@ from memex_research.classifier_research.tasks import (
 )
 
 
-def _require_sae_stack() -> tuple[Any, Any, Any, Any, Any]:
+def _require_sae_stack() -> tuple[Any, Any, Any, Any, Any, Any]:
     joblib, np, torch, libs = _require_probe_stack()
     try:
+        from huggingface_hub import list_repo_tree  # type: ignore[import-not-found]
         from sae_lens import SAE  # type: ignore[import-not-found]
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise RuntimeError(
             "SAE dependencies are not installed. Install the research extra with "
             "`pip install -e .[research]` in Colab or a local ML environment."
         ) from exc
-    return joblib, np, torch, libs, SAE
+    return joblib, np, torch, libs, SAE, list_repo_tree
 
 
 def _emit_sae_progress(
@@ -65,18 +66,49 @@ def _emit_sae_progress(
 
 
 def _load_pretrained_sae(*, model_name: str, sae_layer: int, device: Any) -> tuple[Any, str, str]:
-    _joblib, _np, _torch, _libs, SAE = _require_sae_stack()
+    _joblib, _np, _torch, _libs, SAE, list_repo_tree = _require_sae_stack()
     release_spec = get_sae_release_spec(model_name)
-    sae_id = release_spec.sae_id_for_layer(sae_layer)
-    loaded = SAE.from_pretrained(
-        release=release_spec.release,
-        sae_id=sae_id,
-        device=str(device),
+    try:
+        repo_paths = {
+            str(entry.path)
+            for entry in list_repo_tree(
+                release_spec.repo_id,
+                recursive=True,
+                expand=False,
+            )
+            if getattr(entry, "path", None)
+        }
+    except Exception:
+        repo_paths = set()
+
+    candidate_ids = [
+        sae_id
+        for sae_id in release_spec.sae_id_candidates_for_layer(sae_layer)
+        if not repo_paths or any(path.startswith(f"{sae_id}/") for path in repo_paths)
+    ]
+    if not candidate_ids:
+        candidate_ids = list(release_spec.sae_id_candidates_for_layer(sae_layer))
+
+    errors: list[str] = []
+    for sae_id in candidate_ids:
+        try:
+            loaded = SAE.from_pretrained(
+                release=release_spec.release,
+                sae_id=sae_id,
+                device=str(device),
+            )
+            sae = loaded[0] if isinstance(loaded, tuple) else loaded
+            sae.to(device)
+            sae.eval()
+            return sae, release_spec.release, sae_id
+        except Exception as exc:
+            errors.append(f"{sae_id}: {type(exc).__name__}: {exc}")
+
+    error_summary = "\n".join(errors)
+    raise RuntimeError(
+        f"Unable to load a pretrained SAE for {model_name!r} layer {sae_layer}. Tried: {candidate_ids}\n"
+        f"{error_summary}"
     )
-    sae = loaded[0] if isinstance(loaded, tuple) else loaded
-    sae.to(device)
-    sae.eval()
-    return sae, release_spec.release, sae_id
 
 
 def _batched_sae_feature_scores(
@@ -85,7 +117,7 @@ def _batched_sae_feature_scores(
     vectors: Any,
     batch_size: int,
 ) -> tuple[Any, Any]:
-    _joblib, np, torch, _libs, _SAE = _require_sae_stack()
+    _joblib, np, torch, _libs, _SAE, _list_repo_tree = _require_sae_stack()
     feature_sum = None
     feature_count = None
     for start in range(0, vectors.shape[0], batch_size):
@@ -116,7 +148,7 @@ def _select_sae_features(
     feature_cap: int,
     batch_size: int,
 ) -> list[int]:
-    _joblib, np, _torch, _libs, _SAE = _require_sae_stack()
+    _joblib, np, _torch, _libs, _SAE, _list_repo_tree = _require_sae_stack()
     feature_sum, feature_count = _batched_sae_feature_scores(
         sae=sae,
         vectors=train_vectors,
@@ -138,7 +170,7 @@ def _encode_selected_features(
     selected_features: list[int],
     batch_size: int,
 ) -> Any:
-    _joblib, np, torch, _libs, _SAE = _require_sae_stack()
+    _joblib, np, torch, _libs, _SAE, _list_repo_tree = _require_sae_stack()
     batches: list[Any] = []
     feature_index = np.array(selected_features, dtype=np.int64)
     for start in range(0, vectors.shape[0], batch_size):
@@ -163,7 +195,7 @@ def run_sae_experiment(
     feature_cap: int = 1024,
     batch_size: int = 128,
 ) -> dict[str, Any]:
-    joblib, _np, _torch, libs, _SAE = _require_sae_stack()
+    joblib, _np, _torch, libs, _SAE, _list_repo_tree = _require_sae_stack()
     LogisticRegression, _accuracy_score, _prf = libs
 
     output_dir.mkdir(parents=True, exist_ok=True)

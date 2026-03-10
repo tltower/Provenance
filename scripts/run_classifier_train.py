@@ -23,7 +23,7 @@ from memex_research.classifier_research.transfer_eval import (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", choices=[TASK_SPAN_ROLE, TASK_SOURCE_MATERIALITY], required=True)
-    parser.add_argument("--dataset", choices=["pe", "scicite"], required=True)
+    parser.add_argument("--dataset", choices=["pe", "cdcp", "scicite"], required=True)
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--input-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -47,6 +47,7 @@ def main() -> None:
             input_dir=args.input_dir,
             output_dir=args.output_dir,
             model_name=args.model_name,
+            dataset_name=args.dataset,
             max_length=args.max_length,
             learning_rate=args.learning_rate,
             per_device_train_batch_size=args.per_device_train_batch_size,

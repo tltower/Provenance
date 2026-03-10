@@ -5,6 +5,8 @@ from pathlib import Path
 
 from memex_research.classifier_research.artifacts import package_run_artifacts, write_run_inventory
 from memex_research.classifier_research.datasets import (
+    normalize_cdcp_component_label,
+    normalize_cdcp_span_record,
     normalize_pe_span_record,
     normalize_scicite_source_label,
     normalize_scicite_source_row,
@@ -54,6 +56,10 @@ def test_validate_task_dataset_rejects_invalid_pair() -> None:
         raise AssertionError("Expected invalid task/dataset pair to raise.")
 
 
+def test_validate_task_dataset_accepts_cdcp_for_span_role() -> None:
+    validate_task_dataset("span_role", "cdcp")
+
+
 def test_normalize_scicite_source_row_maps_to_binary_labels() -> None:
     row = {
         "unique_id": "row-1",
@@ -77,6 +83,29 @@ def test_normalize_pe_span_record_labels_claim_and_premise_tokens() -> None:
     record = normalize_pe_span_record("doc-1", text, annotation_text)
     assert record["task"] == "span_role"
     assert "CLAIM" in record["labels"]
+    assert "PREMISE" in record["labels"]
+    assert len(record["tokens"]) == len(record["labels"])
+
+
+def test_normalize_cdcp_component_label_maps_evidence_like_types() -> None:
+    assert normalize_cdcp_component_label("value") == "CLAIM"
+    assert normalize_cdcp_component_label("reference") == "EVIDENCE"
+    assert normalize_cdcp_component_label("reason") == "PREMISE"
+    assert normalize_cdcp_component_label("unknown") is None
+
+
+def test_normalize_cdcp_span_record_labels_claim_evidence_and_premise_tokens() -> None:
+    text = "Cats are mammals. Experts observed purring. Therefore cats make good pets."
+    record = normalize_cdcp_span_record(
+        "cdcp-1",
+        text,
+        proposition_starts=[0, 18, 44],
+        proposition_ends=[17, 43, len(text)],
+        proposition_labels=["value", "reference", "reason"],
+    )
+    assert record["task"] == "span_role"
+    assert "CLAIM" in record["labels"]
+    assert "EVIDENCE" in record["labels"]
     assert "PREMISE" in record["labels"]
     assert len(record["tokens"]) == len(record["labels"])
 
@@ -214,8 +243,15 @@ def test_public_probe_model_is_supported() -> None:
 def test_public_sae_model_is_supported() -> None:
     assert "Qwen/Qwen2.5-7B-Instruct" in SUPPORTED_SAE_MODELS
     spec = get_sae_release_spec("Qwen/Qwen2.5-7B-Instruct")
+    assert spec.repo_id == "andyrdt/saes-qwen2.5-7b-instruct"
     assert spec.hidden_state_index_for_layer(3) == 4
     assert spec.sae_id_for_layer(7) == "resid_post_layer_7/trainer_1"
+    assert spec.sae_id_candidates_for_layer(7) == (
+        "resid_post_layer_7/trainer_1",
+        "resid_post_layer_7/trainer_0",
+        "resid_post_layer_7/trainer_2",
+        "resid_post_layer_7/trainer_3",
+    )
 
 
 def test_create_logistic_regression_supports_newer_and_older_signatures() -> None:

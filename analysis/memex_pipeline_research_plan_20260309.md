@@ -207,9 +207,12 @@ Recommended datasets:
    - useful claim/premise baseline, but weak on evidence
 
 Order:
-1. `PERSUADE` baseline
-2. `CDCP` baseline
-3. `PE` as auxiliary / comparison
+1. `CDCP` baseline
+   - first implemented public evidence-bearing benchmark in this repo
+2. `CDCP` Qwen probe
+3. `CDCP` pretrained-SAE run
+4. `PE` as auxiliary / comparison
+5. `PERSUADE` later, once adapter work is in place
 
 Important note:
 - do not pretend PE alone solves evidence detection
@@ -236,6 +239,9 @@ Known benchmark status:
 - SciCite + SciBERT baseline succeeded and slightly outperformed DeBERTa
 - current transfer bottleneck is candidate generation, not classifier
   quality
+- first probe result on this track already passed the continuation gate
+- first SAE result should use a pretrained public release before custom
+  SAE training
 
 Recommended datasets:
 1. `SciCite`

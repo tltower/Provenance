@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, TypedDict, cast
 
 TaskName = Literal["span_role", "source_materiality"]
-DatasetName = Literal["pe", "scicite"]
+DatasetName = Literal["pe", "cdcp", "scicite"]
 
 TASK_SPAN_ROLE: TaskName = "span_role"
 TASK_SOURCE_MATERIALITY: TaskName = "source_materiality"
@@ -52,7 +52,7 @@ TASK_SPECS: dict[TaskName, TaskSpec] = {
     TASK_SPAN_ROLE: TaskSpec(
         name=TASK_SPAN_ROLE,
         labels=SPAN_ROLE_LABELS,
-        allowed_datasets=("pe",),
+        allowed_datasets=("pe", "cdcp"),
         problem_type="token_classification",
     ),
     TASK_SOURCE_MATERIALITY: TaskSpec(

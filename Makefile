@@ -6,10 +6,12 @@ RUN_ROOT ?= $(PROJECT_ROOT)/analysis/memex_runs
 CANDIDATE_TRANSFER_PATH ?= $(PROJECT_ROOT)/analysis/memex_transfer_seed_10/source_candidates.jsonl
 PE_RAW_ROOT ?= $(DATA_ROOT)/pe_raw
 PE_BENCHMARK_ROOT ?= $(DATA_ROOT)/pe_span_benchmark
+CDCP_DATASET_NAME ?= DFKI-SLT/cdcp
+CDCP_BENCHMARK_ROOT ?= $(DATA_ROOT)/cdcp_span_benchmark
 VENV_BIN := $(PROJECT_ROOT)/.venv/bin
 PYTHON := $(VENV_BIN)/python
 
-.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models pe-prepare pe-deberta pe-probe-qwen pe-sae-qwen scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer scicite-probe-qwen scicite-sae-qwen scicite-deberta-candidate-transfer scicite-scibert-candidate-transfer scicite-probe-qwen-candidate-transfer
+.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models pe-prepare pe-deberta pe-probe-qwen pe-sae-qwen cdcp-prepare cdcp-deberta cdcp-probe-qwen cdcp-sae-qwen scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer scicite-probe-qwen scicite-sae-qwen scicite-deberta-candidate-transfer scicite-scibert-candidate-transfer scicite-probe-qwen-candidate-transfer
 
 bootstrap:
 	bash scripts/bootstrap_remote.sh
@@ -71,6 +73,37 @@ pe-sae-qwen:
 		--model-name Qwen/Qwen2.5-7B-Instruct \
 		--input-dir $(PE_BENCHMARK_ROOT) \
 		--output-dir $(RUN_ROOT)/pe_sae_qwen25_7b_instruct
+
+cdcp-prepare:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/prepare_cdcp_span_benchmark.py \
+		--dataset-name $(CDCP_DATASET_NAME) \
+		--output-dir $(CDCP_BENCHMARK_ROOT)
+
+cdcp-deberta:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_classifier_train.py \
+		--task span_role \
+		--dataset cdcp \
+		--model-name microsoft/deberta-v3-base \
+		--input-dir $(CDCP_BENCHMARK_ROOT) \
+		--output-dir $(RUN_ROOT)/cdcp_deberta
+
+cdcp-probe-qwen:
+	mkdir -p $(RUN_ROOT)/cdcp_probe_qwen25_7b_instruct
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_probe_experiment.py \
+		--task span_role \
+		--dataset cdcp \
+		--model-name Qwen/Qwen2.5-7B-Instruct \
+		--input-dir $(CDCP_BENCHMARK_ROOT) \
+		--output-dir $(RUN_ROOT)/cdcp_probe_qwen25_7b_instruct
+
+cdcp-sae-qwen:
+	mkdir -p $(RUN_ROOT)/cdcp_sae_qwen25_7b_instruct
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_sae_experiment.py \
+		--task span_role \
+		--dataset cdcp \
+		--model-name Qwen/Qwen2.5-7B-Instruct \
+		--input-dir $(CDCP_BENCHMARK_ROOT) \
+		--output-dir $(RUN_ROOT)/cdcp_sae_qwen25_7b_instruct
 
 scicite-deberta:
 	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_scicite_source_experiment.py \

@@ -7,6 +7,7 @@ Scope:
 - argument span-role benchmarking
 - source-materiality benchmarking
 - residual-stream probe experiments
+- pretrained-SAE experiments
 - qualitative transfer checks on a fixed 10-post LessWrong seed set
 
 This project is intentionally separate from:
@@ -19,6 +20,8 @@ Start here:
 
 - quick start:
   - `make bootstrap`
-  - `make scicite-deberta`
+  - `make cdcp-prepare`
+  - `make cdcp-deberta`
+  - `make scicite-scibert`
 - runbook: [`scripts/README.md`](/Users/tatetower/Codex/memex-research/scripts/README.md)
 - Sprint 1 bundle scaffold: [`analysis/memex_research_bundle_20260308/README.md`](/Users/tatetower/Codex/memex-research/analysis/memex_research_bundle_20260308/README.md)

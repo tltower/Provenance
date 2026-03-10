@@ -91,6 +91,17 @@ def normalize_pe_component_label(label: str) -> str | None:
     return None
 
 
+def normalize_cdcp_component_label(label: str) -> str | None:
+    clean = (label or "").strip().lower().replace("-", "").replace("_", "")
+    if clean in {"value", "policy", "claim"}:
+        return "CLAIM"
+    if clean in {"fact", "testimony", "reference", "evidence"}:
+        return "EVIDENCE"
+    if clean in {"premise", "reason"}:
+        return "PREMISE"
+    return None
+
+
 def tokenize_with_offsets(text: str) -> list[tuple[str, int, int]]:
     return [(match.group(0), match.start(), match.end()) for match in TOKEN_RE.finditer(text)]
 
@@ -197,5 +208,47 @@ def normalize_pe_span_record(doc_id: str, text: str, annotation_text: str) -> Sp
         "tokens": tokens,
         "labels": labels,
         "dataset": "PersuasiveEssays",
+        "task": TASK_SPAN_ROLE,
+    }
+
+
+def normalize_cdcp_span_record(
+    doc_id: str,
+    text: str,
+    proposition_starts: Sequence[int],
+    proposition_ends: Sequence[int],
+    proposition_labels: Sequence[str],
+) -> SpanRoleExample:
+    if not (
+        len(proposition_starts) == len(proposition_ends) == len(proposition_labels)
+    ):
+        raise ValueError(
+            f"CDCP proposition field lengths do not match for document {doc_id!r}: "
+            f"{len(proposition_starts)} starts, {len(proposition_ends)} ends, "
+            f"{len(proposition_labels)} labels"
+        )
+
+    annotations: list[tuple[str, list[tuple[int, int]]]] = []
+    for start, end, raw_label in zip(
+        proposition_starts, proposition_ends, proposition_labels, strict=True
+    ):
+        label = normalize_cdcp_component_label(raw_label)
+        if label is None:
+            continue
+        annotations.append((label, [(int(start), int(end))]))
+
+    token_offsets = tokenize_with_offsets(text)
+    _validate_tokenization(text, token_offsets, doc_id=doc_id)
+    _validate_annotation_alignment(token_offsets, annotations, doc_id=doc_id)
+    tokens, labels = label_tokens_from_annotations(text, annotations)
+    for label in labels:
+        if label not in SPAN_ROLE_LABELS:
+            raise ValueError(f"Unexpected CDCP span label {label!r} for document {doc_id}")
+    return {
+        "id": doc_id,
+        "text": text,
+        "tokens": tokens,
+        "labels": labels,
+        "dataset": "CDCP",
         "task": TASK_SPAN_ROLE,
     }

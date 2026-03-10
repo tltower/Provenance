@@ -26,24 +26,32 @@ SUPPORTED_PROBE_MODELS = MODEL_REGISTRY["probe"]
 class SAEReleaseSpec:
     model_name: str
     release: str
+    repo_id: str
     available_layers: tuple[int, ...]
     hidden_state_offset: int
-    sae_id_template: str
+    trainer_candidates: tuple[int, ...]
 
     def hidden_state_index_for_layer(self, sae_layer: int) -> int:
         return sae_layer + self.hidden_state_offset
 
+    def sae_id_candidates_for_layer(self, sae_layer: int) -> tuple[str, ...]:
+        return tuple(
+            f"resid_post_layer_{sae_layer}/trainer_{trainer}"
+            for trainer in self.trainer_candidates
+        )
+
     def sae_id_for_layer(self, sae_layer: int) -> str:
-        return self.sae_id_template.format(layer=sae_layer)
+        return self.sae_id_candidates_for_layer(sae_layer)[0]
 
 
 SAE_RELEASES: dict[str, SAEReleaseSpec] = {
     "Qwen/Qwen2.5-7B-Instruct": SAEReleaseSpec(
         model_name="Qwen/Qwen2.5-7B-Instruct",
-        release="andyrdt/saes-qwen2.5-7b-instruct",
+        release="qwen2.5-7b-instruct-andyrdt",
+        repo_id="andyrdt/saes-qwen2.5-7b-instruct",
         available_layers=(3, 7, 11, 15, 19, 23, 27),
         hidden_state_offset=1,
-        sae_id_template="resid_post_layer_{layer}/trainer_1",
+        trainer_candidates=(1, 0, 2, 3),
     ),
 }
 SUPPORTED_SAE_MODELS = set(SAE_RELEASES)

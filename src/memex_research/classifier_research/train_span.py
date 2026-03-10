@@ -152,6 +152,7 @@ def train_span_classifier(
     input_dir: Path,
     output_dir: Path,
     model_name: str,
+    dataset_name: str = "pe",
     max_length: int = 256,
     learning_rate: float = 2e-5,
     per_device_train_batch_size: int = 8,
@@ -231,7 +232,7 @@ def train_span_classifier(
 
     metrics = {
         "task": "span_role",
-        "dataset": "pe",
+        "dataset": dataset_name,
         "model_name": model_name,
         "test_metrics": test_metrics,
         "counts": {
@@ -245,7 +246,7 @@ def train_span_classifier(
         json.dumps(
             {
                 "task": "span_role",
-                "dataset": "pe",
+                "dataset": dataset_name,
                 "model_name": model_name,
                 "max_length": max_length,
                 "learning_rate": learning_rate,

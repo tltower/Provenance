@@ -3,7 +3,8 @@
 This directory contains the execution surface for the Sprint 1 Memex pilot:
 
 - benchmark prep for:
-  - Persuasive Essays / UKP -> `span_role`
+  - CDCP -> `span_role`
+  - Persuasive Essays / UKP -> `span_role` auxiliary baseline
   - SciCite -> `source_materiality`
 - classifier training for:
   - `microsoft/deberta-v3-base`
@@ -32,6 +33,10 @@ Use a normal remote GPU shell with the repo cloned locally. Colab works, but the
 
 ```bash
 make bootstrap
+make cdcp-prepare
+make cdcp-deberta
+make cdcp-probe-qwen
+make cdcp-sae-qwen
 make scicite-deberta
 make scicite-scibert
 make scicite-probe-qwen
@@ -81,27 +86,34 @@ That script installs:
 
 ## Expected Input Layout
 
+### CDCP
+
+This script downloads the public Hugging Face mirror and writes normalized
+JSONL split files:
+
+```bash
+python scripts/prepare_cdcp_span_benchmark.py \
+  --dataset-name DFKI-SLT/cdcp \
+  --output-dir /content/data/cdcp_span_benchmark
+```
+
+Output:
+
+- `/content/data/cdcp_span_benchmark/train.jsonl`
+- `/content/data/cdcp_span_benchmark/dev.jsonl`
+- `/content/data/cdcp_span_benchmark/test.jsonl`
+- `/content/data/cdcp_span_benchmark/summary.json`
+
 ### Persuasive Essays / UKP
 
-This script expects a root directory containing `.txt` / `.ann` files either:
+This remains useful as an auxiliary claim/premise baseline. It expects a
+root directory containing `.txt` / `.ann` files either:
 
 - under benchmark-native split directories:
   - `train/`
   - `dev/` or `validation/`
   - `test/`
 - or via explicit split manifests
-
-Example:
-
-```text
-data/pe_raw/
-  train/
-    essay001.txt
-    essay001.ann
-  test/
-    essay900.txt
-    essay900.ann
-```
 
 ### SciCite
 
@@ -156,6 +168,39 @@ Output:
 Write runs under a single root like:
 
 - `/content/memex-research/analysis/memex_runs/`
+
+### CDCP + DeBERTa span-role baseline
+
+```bash
+python scripts/run_classifier_train.py \
+  --task span_role \
+  --dataset cdcp \
+  --model-name microsoft/deberta-v3-base \
+  --input-dir /content/data/cdcp_span_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/cdcp_deberta
+```
+
+### CDCP + Qwen probe run
+
+```bash
+python scripts/run_probe_experiment.py \
+  --task span_role \
+  --dataset cdcp \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/cdcp_span_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/cdcp_probe_qwen25_7b_instruct
+```
+
+### CDCP + Qwen pretrained-SAE run
+
+```bash
+python scripts/run_sae_experiment.py \
+  --task span_role \
+  --dataset cdcp \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/cdcp_span_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/cdcp_sae_qwen25_7b_instruct
+```
 
 ### PE + DeBERTa span-role baseline
 
