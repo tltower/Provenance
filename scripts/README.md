@@ -34,8 +34,8 @@ Use a normal remote GPU shell with the repo cloned locally. Colab works, but the
 make bootstrap
 make scicite-deberta
 make scicite-scibert
-make scicite-deberta-transfer
 make scicite-probe-qwen
+make scicite-sae-qwen
 ```
 
 If you do not want `make`, the single-command equivalents are:
@@ -49,10 +49,13 @@ python scripts/run_scicite_source_experiment.py --model-name microsoft/deberta-v
 Recommended split:
 
 - classifier training first
-- transfer pass second
+- candidate-only transfer second
+- heuristic transfer only after that if you want to debug candidate generation
 - probe experiments only after classifier baselines look good
+- pretrained SAE experiments only after the corresponding probe clears the continuation gate
 
 Do not start with the probe path.
+Do not start with SAE training or SAE reuse until the linear probe path is already credible.
 
 ## Environment Setup
 
@@ -165,6 +168,28 @@ python scripts/run_classifier_train.py \
   --output-dir /content/memex-research/analysis/memex_runs/pe_deberta
 ```
 
+### PE + Qwen probe run
+
+```bash
+python scripts/run_probe_experiment.py \
+  --task span_role \
+  --dataset pe \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/pe_span_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/pe_probe_qwen25_7b_instruct
+```
+
+### PE + Qwen pretrained-SAE run
+
+```bash
+python scripts/run_sae_experiment.py \
+  --task span_role \
+  --dataset pe \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/pe_span_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/pe_sae_qwen25_7b_instruct
+```
+
 ### SciCite + DeBERTa source-materiality baseline
 
 ```bash
@@ -185,6 +210,28 @@ python scripts/run_classifier_train.py \
   --model-name allenai/scibert_scivocab_uncased \
   --input-dir /content/data/scicite_material_benchmark \
   --output-dir /content/memex-research/analysis/memex_runs/scicite_scibert
+```
+
+### SciCite + Qwen probe run
+
+```bash
+python scripts/run_probe_experiment.py \
+  --task source_materiality \
+  --dataset scicite \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/scicite_material_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/scicite_probe_qwen25_7b_instruct
+```
+
+### SciCite + Qwen pretrained-SAE run
+
+```bash
+python scripts/run_sae_experiment.py \
+  --task source_materiality \
+  --dataset scicite \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
+  --input-dir /content/data/scicite_material_benchmark \
+  --output-dir /content/memex-research/analysis/memex_runs/scicite_sae_qwen25_7b_instruct
 ```
 
 Each classifier run writes:
@@ -218,6 +265,14 @@ Probe runs also write:
 - `summary.json`
 - `layer_XX.metrics.json`
 - `layer_XX.probe.joblib`
+
+Pretrained-SAE runs write:
+
+- `sae_status.json`
+- `summary.json`
+- `sae_layer_XX.metrics.json`
+- `sae_layer_XX.features.json`
+- `sae_layer_XX.classifier.joblib`
 
 To inventory a run tree:
 
@@ -257,6 +312,76 @@ Packaging defaults:
 - excludes `trainer/` by default to keep archives small
 
 Only pass `--include-trainer` if you explicitly want full trainer checkpoints.
+
+## SAE Strategy
+
+Current SAE work is intentionally split into two phases:
+
+1. **Pretrained SAE reuse**
+   - use published SAEs for a public model such as `Qwen/Qwen2.5-7B-Instruct`
+   - determine whether SAE feature classifiers preserve enough of the linear-probe signal
+2. **Custom SAE training**
+   - only after the pretrained SAE path is credible
+   - prioritize benchmark/task layers that probe best, especially early layers such as source-materiality layer `1`
+
+For Qwen, the current pretrained SAE release supports only a subset of layers:
+
+- `3, 7, 11, 15, 19, 23, 27`
+
+So if you want to test layer `1`, that requires a later custom-SAE track rather than the current pretrained-SAE runner.
+
+## Candidate-Only Source Transfer
+
+When you want to measure classifier transfer without conflating it with
+LessWrong candidate-generation heuristics, use the candidate-only path.
+
+Expected input format:
+
+- JSONL
+- one candidate per line
+- required fields:
+  - `post_id`
+  - `name`
+  - `context`
+- optional fields:
+  - `candidate_id`
+  - `title`
+  - `slug`
+  - `url`
+  - `origin`
+  - `gold_label`
+
+Example row:
+
+```json
+{"post_id":"6hfGNLf4Hg5DXqJCF","title":"A Fable of Science and Politics","slug":"a-fable-of-science-and-politics","candidate_id":"c1","name":"History of the Wars","context":"Procopius said ...","gold_label":"SOURCE"}
+```
+
+Run the classifier-only transfer like this:
+
+```bash
+python scripts/run_source_candidate_transfer.py \
+  --candidates-path /content/data/lw_source_candidates.jsonl \
+  --model-dir /content/memex-research/analysis/memex_runs/scicite_scibert/model \
+  --output-dir /content/memex-research/analysis/memex_runs/scicite_scibert/transfer_candidates
+```
+
+Run the probe-only transfer like this:
+
+```bash
+python scripts/run_source_candidate_transfer.py \
+  --candidates-path /content/data/lw_source_candidates.jsonl \
+  --probe-dir /content/memex-research/analysis/memex_runs/scicite_probe_qwen25_7b_instruct \
+  --probe-model-name Qwen/Qwen2.5-7B-Instruct \
+  --output-dir /content/memex-research/analysis/memex_runs/scicite_probe_qwen25_7b_instruct/transfer_candidates
+```
+
+Make targets are also available if you set `CANDIDATE_TRANSFER_PATH`:
+
+```bash
+make scicite-scibert-candidate-transfer CANDIDATE_TRANSFER_PATH=/content/data/lw_source_candidates.jsonl
+make scicite-probe-qwen-candidate-transfer CANDIDATE_TRANSFER_PATH=/content/data/lw_source_candidates.jsonl
+```
 
 ## Step 3: Run Probe Experiments
 

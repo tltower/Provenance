@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 MODEL_REGISTRY = {
@@ -19,6 +20,33 @@ MODEL_REGISTRY = {
 SUPPORTED_SEQUENCE_MODELS = MODEL_REGISTRY["sequence-classification"]
 SUPPORTED_TOKEN_MODELS = MODEL_REGISTRY["token-classification"]
 SUPPORTED_PROBE_MODELS = MODEL_REGISTRY["probe"]
+
+
+@dataclass(frozen=True)
+class SAEReleaseSpec:
+    model_name: str
+    release: str
+    available_layers: tuple[int, ...]
+    hidden_state_offset: int
+    sae_id_template: str
+
+    def hidden_state_index_for_layer(self, sae_layer: int) -> int:
+        return sae_layer + self.hidden_state_offset
+
+    def sae_id_for_layer(self, sae_layer: int) -> str:
+        return self.sae_id_template.format(layer=sae_layer)
+
+
+SAE_RELEASES: dict[str, SAEReleaseSpec] = {
+    "Qwen/Qwen2.5-7B-Instruct": SAEReleaseSpec(
+        model_name="Qwen/Qwen2.5-7B-Instruct",
+        release="andyrdt/saes-qwen2.5-7b-instruct",
+        available_layers=(3, 7, 11, 15, 19, 23, 27),
+        hidden_state_offset=1,
+        sae_id_template="resid_post_layer_{layer}/trainer_1",
+    ),
+}
+SUPPORTED_SAE_MODELS = set(SAE_RELEASES)
 
 
 def _require_ml_stack() -> tuple[Any, Any]:
@@ -87,3 +115,8 @@ def create_probe_components(model_name: str) -> tuple[Any, Any]:
     tokenizer = get_tokenizer(model_name)
     model = transformers.AutoModel.from_pretrained(model_name, output_hidden_states=True)
     return tokenizer, model
+
+
+def get_sae_release_spec(model_name: str) -> SAEReleaseSpec:
+    _validate_model_name(model_name, allowed=SUPPORTED_SAE_MODELS, purpose="sae")
+    return SAE_RELEASES[model_name]

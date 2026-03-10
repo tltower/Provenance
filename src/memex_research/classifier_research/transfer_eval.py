@@ -18,6 +18,9 @@ def _repo_root() -> Path:
 DEFAULT_TRANSFER_MANIFEST = (
     _repo_root() / "analysis" / "memex_transfer_seed_10" / "manifest.json"
 )
+DEFAULT_SOURCE_CANDIDATE_TRANSFER_PATH = (
+    _repo_root() / "analysis" / "memex_transfer_seed_10" / "source_candidates.jsonl"
+)
 _NUMBERED_ENTRY_RE = re.compile(r"(?:^|\s)(\d+)\.\s+(.+?)(?=(?:\s+\d+\.\s+)|$)")
 _URL_RE = re.compile(r"https?://\S+")
 _QUOTED_TITLE_RE = re.compile(r"[“\"]([^”\"]{5,200})[”\"]")
@@ -81,6 +84,41 @@ def _load_transfer_posts(path: Path = DEFAULT_TRANSFER_MANIFEST) -> list[dict[st
             }
         )
     return posts
+
+
+def load_source_candidate_transfer_rows(
+    path: Path = DEFAULT_SOURCE_CANDIDATE_TRANSFER_PATH,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            clean = line.strip()
+            if not clean:
+                continue
+            row = json.loads(clean)
+            if not isinstance(row, dict):
+                raise RuntimeError(f"Invalid candidate-only transfer row at {path}:{line_number}")
+            context = str(row.get("context") or "").strip()
+            name = str(row.get("name") or "").strip()
+            post_id = str(row.get("post_id") or "").strip()
+            if not context or not name or not post_id:
+                raise RuntimeError(
+                    f"Candidate-only transfer rows require post_id, name, and context at {path}:{line_number}"
+                )
+            rows.append(
+                {
+                    "post_id": post_id,
+                    "title": str(row.get("title") or ""),
+                    "slug": str(row.get("slug") or ""),
+                    "candidate_id": str(row.get("candidate_id") or f"{post_id}:{len(rows)}"),
+                    "name": name,
+                    "context": context,
+                    "url": str(row.get("url") or "").strip() or None,
+                    "origin": str(row.get("origin") or "curated_candidate"),
+                    "gold_label": str(row.get("gold_label") or "").strip() or None,
+                }
+            )
+    return rows
 
 
 def _source_key(name: str, url: str | None) -> tuple[str, str]:
@@ -267,6 +305,66 @@ def _write_source_transfer_summary(output_dir: Path) -> None:
     )
 
 
+def _write_source_candidate_transfer_summary(output_dir: Path) -> None:
+    rows = [
+        json.loads(path.read_text())
+        for path in sorted(output_dir.glob("*.json"))
+        if path.name not in {"summary.json", "diagnostics.json", "run_config.json", "metrics.json"}
+    ]
+    label_counts: Counter[str] = Counter()
+    gold_rows: list[tuple[str, str]] = []
+    candidate_count = 0
+    for row in rows:
+        candidates = row.get("candidates", [])
+        candidate_count += len(candidates)
+        for candidate in candidates:
+            predicted = str(candidate.get("predicted_label") or "")
+            gold = str(candidate.get("gold_label") or "")
+            if predicted:
+                label_counts[predicted] += 1
+            if gold:
+                gold_rows.append((gold, predicted))
+    summary: dict[str, Any] = {
+        "post_count": len(rows),
+        "candidate_count": candidate_count,
+        "predicted_label_counts": dict(sorted(label_counts.items())),
+    }
+    if gold_rows:
+        try:
+            from sklearn.metrics import (  # type: ignore[import-not-found]
+                accuracy_score,
+                precision_recall_fscore_support,
+            )
+        except ImportError:
+            pass
+        else:
+            target_labels = ["SOURCE", "NOT_SOURCE"]
+            gold_labels = [item[0] for item in gold_rows]
+            predicted_labels = [item[1] for item in gold_rows]
+            precision, recall, f1, _support = precision_recall_fscore_support(
+                gold_labels,
+                predicted_labels,
+                labels=target_labels,
+                average="macro",
+                zero_division=0,
+            )
+            summary["labeled_candidate_count"] = len(gold_rows)
+            summary["gold_metrics"] = {
+                "accuracy": float(accuracy_score(gold_labels, predicted_labels)),
+                "precision_macro": float(precision),
+                "recall_macro": float(recall),
+                "f1_macro": float(f1),
+            }
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    write_run_reports(
+        output_dir=output_dir,
+        repo_root=_repo_root(),
+        title="Candidate-Only Source Transfer Evaluation",
+        payload=summary,
+        extra={"problem_type": "candidate_only_transfer"},
+    )
+
+
 def _write_span_transfer_summary(output_dir: Path) -> None:
     rows = [
         json.loads(path.read_text())
@@ -409,6 +507,56 @@ def run_source_transfer_hf_model(
     _write_source_transfer_summary(output_dir)
 
 
+def run_source_candidate_transfer_hf_model(
+    *,
+    model_dir: Path,
+    output_dir: Path,
+    candidates_path: Path = DEFAULT_SOURCE_CANDIDATE_TRANSFER_PATH,
+    max_length: int = 256,
+) -> None:
+    _joblib, _np, stack = _require_ml_stack()
+    torch, transformers = stack
+    tokenizer = _load_local_tokenizer(model_dir)
+    model = transformers.AutoModelForSequenceClassification.from_pretrained(str(model_dir))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    grouped_rows: dict[str, dict[str, Any]] = {}
+    for row in load_source_candidate_transfer_rows(candidates_path):
+        bucket = grouped_rows.setdefault(
+            row["post_id"],
+            {
+                "post_id": row["post_id"],
+                "title": row["title"],
+                "slug": row["slug"],
+                "candidates": [],
+            },
+        )
+        encoded = tokenizer(str(row["context"]), truncation=True, max_length=max_length, return_tensors="pt")
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        with torch.no_grad():
+            result = model(**encoded)
+        logits = result.logits.detach().cpu().numpy()[0]
+        pred_id = int(logits.argmax())
+        bucket["candidates"].append(
+            {
+                "candidate_id": row["candidate_id"],
+                "name": row["name"],
+                "origin": row["origin"],
+                "url": row["url"],
+                "context": row["context"],
+                "gold_label": row["gold_label"],
+                "predicted_label": model.config.id2label[pred_id],
+                "logits": logits.tolist(),
+            }
+        )
+    for post_id, row in grouped_rows.items():
+        (output_dir / f"{post_id}.json").write_text(json.dumps(row, indent=2, sort_keys=True))
+    _write_source_candidate_transfer_summary(output_dir)
+
+
 def run_span_transfer_hf_model(
     *,
     model_dir: Path,
@@ -529,6 +677,61 @@ def run_source_transfer_probe(
             )
         )
     _write_source_transfer_summary(output_dir)
+
+
+def run_source_candidate_transfer_probe(
+    *,
+    probe_dir: Path,
+    output_dir: Path,
+    model_name: str,
+    candidates_path: Path = DEFAULT_SOURCE_CANDIDATE_TRANSFER_PATH,
+    max_length: int = 256,
+) -> None:
+    joblib, _np, stack = _require_ml_stack()
+    torch, _transformers = stack
+    summary = json.loads((probe_dir / "summary.json").read_text())
+    best_layer = int(summary["best_layer"])
+    classifier = joblib.load(probe_dir / f"layer_{best_layer:02d}.probe.joblib")
+    tokenizer, model = create_probe_components(model_name)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+
+    grouped_rows: dict[str, dict[str, Any]] = {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for row in load_source_candidate_transfer_rows(candidates_path):
+        bucket = grouped_rows.setdefault(
+            row["post_id"],
+            {
+                "post_id": row["post_id"],
+                "title": row["title"],
+                "slug": row["slug"],
+                "candidates": [],
+                "best_layer": best_layer,
+            },
+        )
+        encoded = tokenizer(str(row["context"]), truncation=True, max_length=max_length, return_tensors="pt")
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        with torch.no_grad():
+            result = model(**encoded)
+        hidden_state = result.hidden_states[best_layer][0].detach().cpu().numpy()
+        attention_mask = encoded["attention_mask"][0].detach().cpu().numpy().astype(bool)
+        pooled = hidden_state[attention_mask].mean(axis=0).reshape(1, -1)
+        pred_id = int(classifier.predict(pooled)[0])
+        bucket["candidates"].append(
+            {
+                "candidate_id": row["candidate_id"],
+                "name": row["name"],
+                "origin": row["origin"],
+                "url": row["url"],
+                "context": row["context"],
+                "gold_label": row["gold_label"],
+                "predicted_label": summary["best_metrics"]["label_list"][pred_id],
+            }
+        )
+    for post_id, row in grouped_rows.items():
+        (output_dir / f"{post_id}.json").write_text(json.dumps(row, indent=2, sort_keys=True))
+    _write_source_candidate_transfer_summary(output_dir)
 
 
 def run_span_transfer_probe(

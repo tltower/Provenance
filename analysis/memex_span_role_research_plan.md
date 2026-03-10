@@ -1,283 +1,208 @@
-# Span Role / Argument Mining Research Plan
+# Span Role Research Plan
 
-## Context
+## Position
 
-Source materiality classifier is now validated (DeBERTa F1 0.870, SciBERT
-F1 0.874 on SciCite). This plan covers the parallel track: span role
-classification for argument structure.
+This is a **parallel benchmark track**, not the next stage of a single
+pipeline.
 
-The code for this track already exists but has never been run. The span
-training pipeline, PE benchmark prep, transfer evaluation, and probe
-infrastructure are all written and tested. This plan is about executing
-them and expanding to multiple datasets.
+Its only job is to answer two questions:
+
+1. can a benchmark-trained span-role model learn useful argumentative
+   structure at all?
+2. do those representations transfer plausibly to LessWrong-style prose
+   without any in-domain labels?
+
+Do **not** integrate anything into a larger Memex pipeline until those
+questions are answered.
 
 ## Task Definition
 
-```
-span_role_classifier
-  labels: CLAIM | PREMISE | EVIDENCE | OTHER
-  type:   token classification (BIO-style, first-subword labeling)
-  model:  DeBERTa-v3-base (primary)
-```
-
-## Known Issue: EVIDENCE Is Underspecified
+Target ontology:
 
-Persuasive Essays only annotates `major_claim`, `claim`, and `premise`.
-There is no EVIDENCE label in PE. The current code maps:
-
-- `major_claim` → CLAIM
-- `claim` → CLAIM
-- `premise` → PREMISE
-- unlabeled → OTHER
+- `CLAIM`
+- `PREMISE`
+- `EVIDENCE`
+- `OTHER`
 
-EVIDENCE is defined in the task spec but never assigned by the PE adapter.
-This means the first trained model is effectively a 3-class classifier
-(CLAIM / PREMISE / OTHER) until a dataset with evidence annotations is
-added.
-
-This is fine for v1. EVIDENCE becomes real when CDCP is integrated (its
-`fact`, `testimony`, `reference` labels map to EVIDENCE).
-
-## Phase 1: PE Baseline (Sprint 2, Day 1)
-
-Run what already exists. No new code needed.
-
-**Steps:**
-
-1. Download Persuasive Essays dataset (Stab & Gurevych 2017)
-   - 402 essays with BRAT annotations (.txt + .ann files)
-   - standard train/test split
-
-2. Prepare benchmark:
-   ```bash
-   python scripts/prepare_pe_span_benchmark.py \
-     --input-root /data/pe_raw \
-     --output-dir /data/pe_span_benchmark
-   ```
-
-3. Train DeBERTa:
-   ```bash
-   python scripts/run_classifier_train.py \
-     --task span_role --dataset pe \
-     --model-name microsoft/deberta-v3-base \
-     --input-dir /data/pe_span_benchmark \
-     --output-dir /runs/pe_deberta
-   ```
-
-4. Inspect outputs:
-   - `metrics.json` → test F1 (expect ~0.70-0.80 macro F1 based on
-     literature for PE with DeBERTa-class models)
-   - `predictions.jsonl` → spot-check token-level predictions
-   - transfer output on 10 LessWrong posts → qualitative look
+Reality for the first benchmark runs:
 
-**Expected baseline range:**
+- the first supported benchmark path is effectively a
+  `CLAIM | PREMISE | OTHER` baseline
+- `EVIDENCE` stays in the task schema, but it is not meaningfully
+  supervised until we add an evidence-bearing dataset
 
-Literature reference points for component classification on PE:
-- Stab & Gurevych (2017) original: ~0.73 macro F1
-- DeBERTa-class models typically score 0.75-0.82
-- If below 0.65: something is wrong with the pipeline
-- If above 0.80: strong baseline, move to transfer
+That is fine. The first sprint is about validating the track, not
+pretending the full ontology is already solved.
 
-**Time:** 1 day (mostly waiting for training)
-
-## Phase 2: Transfer Quality Check (Sprint 2, Day 2)
-
-The source materiality transfer failed because candidate generation was
-too weak (4/10 posts got zero candidates). Span role transfer is
-different — it operates on raw text, not on pre-extracted candidates.
-Every post gets predictions. The question is whether those predictions
-are sensible.
-
-**Steps:**
-
-1. Read the 10 transfer output files from Phase 1
-2. For each post, check:
-   - Are claim spans actually claims (assertions the author makes)?
-   - Are premise spans actually supporting reasoning?
-   - Does OTHER correctly capture non-argumentative text?
-   - Are span boundaries reasonable (not cutting mid-sentence)?
-3. Write a short qualitative note per post (2-3 sentences)
-
-**What good transfer looks like:**
-
-A LessWrong post like "An Intuitive Explanation of Bayes's Theorem"
-should produce:
-- CLAIM spans on Eliezer's main assertions about Bayesian reasoning
-- PREMISE spans on his supporting examples and derivations
-- OTHER on narrative framing, asides, meta-commentary
+## Benchmark Order
 
-**What bad transfer looks like:**
+### Phase 1: PE Sanity Baseline
 
-- Everything labeled OTHER (model learned essay-specific cues)
-- Claims and premises swapped systematically
-- Span boundaries at random token positions
+Purpose:
 
-**Decision gate:** If transfer is qualitatively plausible on 6+/10 posts,
-proceed. If not, the PE→LessWrong domain gap is too large and we need
-CDCP or in-domain data before continuing.
+- validate the token-classification training path
+- validate the transfer-eval surface on raw LessWrong text
+- get a first `CLAIM | PREMISE | OTHER` baseline cheaply
 
-**Time:** 2-3 hours (manual reading)
+Dataset:
 
-## Phase 3: Add CDCP Dataset (Sprint 2, Days 3-5)
+- Persuasive Essays / UKP
 
-CDCP (Cornell) is the priority second dataset because:
-- It has EVIDENCE-equivalent labels (fact, testimony, reference)
-- It's user-generated text (closer to LessWrong than student essays)
-- It has support/attack relations (useful later for relation classifier)
-- It's the dataset the original research plan specified
+Current label mapping:
 
-**Steps:**
+- `major_claim` -> `CLAIM`
+- `claim` -> `CLAIM`
+- `premise` -> `PREMISE`
+- unlabeled -> `OTHER`
 
-1. Download CDCP dataset
-   - 731 paragraphs from an online discussion forum
-   - Labels: policy, value, fact, testimony, reference
+Current repo behavior:
 
-2. Write CDCP adapter in datasets.py:
-   ```python
-   def normalize_cdcp_span_record(record) -> SpanRoleExample:
-       # policy, value → CLAIM
-       # fact, testimony, reference → EVIDENCE
-       # unlabeled → OTHER
-   ```
-   Note: CDCP has no direct PREMISE equivalent. This is a known mapping
-   issue. Options:
-   - Map everything non-claim to EVIDENCE (lose premise/evidence
-     distinction)
-   - Map `testimony` to PREMISE and `fact`/`reference` to EVIDENCE
-   - Keep CDCP as a transfer stress test only, not a training source
+- deterministic synthetic `dev` split if benchmark `dev` is absent
+- token-alignment validation during PE normalization
 
-3. Add CDCP prep script (similar to prepare_pe_span_benchmark.py)
+Success condition:
 
-4. Train DeBERTa on CDCP alone, evaluate on held-out split
+- benchmark metrics are in a plausible literature range
+- transfer outputs on the 10-post seed set are not degenerate
+  - not all `OTHER`
+  - not claim/premise everywhere
+  - boundaries look coherent
 
-5. Train DeBERTa on PE+CDCP combined, evaluate on both test splits
+### Phase 2: Evidence-Bearing Dataset
 
-6. Compare:
-   - PE-only model on CDCP test
-   - CDCP-only model on PE test
-   - Combined model on both
-   - All three on LessWrong transfer
+Purpose:
 
-**Key question this answers:** Does multi-dataset training help or hurt
-transfer to LessWrong?
+- turn `EVIDENCE` into a real supervised label
+- test whether evidence behavior transfers differently from claim/premise
 
-**Time:** 3-5 days (includes writing adapter, debugging format issues)
+Priority order:
 
-## Phase 4: Probes (Sprint 2-3, Parallel Track)
+1. `PERSUADE`
+2. `CDCP`
+3. `PE` remains as an auxiliary baseline/comparison dataset
 
-Run alongside Phases 1-3. Same probe infrastructure used for source
-materiality, applied to span roles.
+Why this order:
 
-**Steps:**
+- `PERSUADE` gives explicit evidence supervision
+- `CDCP` is more web-like and supports later relation work
+- `PE` is still useful, but weak on the part we care about most
 
-1. Fix model allowlist in hf_models.py to accept Qwen2.5-7B (or
-   authenticate for Llama-3.1-8B access on RunPod)
+Important note:
 
-2. Run span role probes:
-   ```bash
-   python scripts/run_probe_experiment.py \
-     --task span_role --dataset pe \
-     --model-name Qwen/Qwen2.5-7B \
-     --input-dir /data/pe_span_benchmark \
-     --output-dir /runs/pe_probe_qwen
-   ```
+- do **not** merge new datasets casually
+- each dataset gets its own benchmark run first
+- only after that do we test mixed training
 
-3. Analyze layer-wise probe accuracy:
-   - Which layers encode argument roles best?
-   - Compare peak probe F1 to DeBERTa baseline
-   - Is the 90% gate met?
+### Phase 3: Probe Track
 
-4. If running source materiality probes in the same session, compare:
-   - Do span roles and source materiality peak at the same layers?
-   - If different layers: evidence that these are genuinely different
-     representations (supports two-classifier architecture)
-   - If same layer: the representations might be entangled (interesting
-     for SAE work)
+This is the research add-on for span roles, not the first implementation
+path.
 
-**Probe gate:** Best layer F1 >= 90% of DeBERTa span role F1
+Order:
 
-**Time:** 1-2 days (GPU time, mostly extraction)
+1. train the benchmark classifier baseline
+2. run the public-model linear probe
+3. compare probe F1 to the best classifier F1
+4. only then decide whether SAE work is justified
 
-## Phase 5: Expand If Transfer Works (Sprint 3)
+Probe continuation gate:
 
-Only if Phase 2 gate passes.
+- best probe F1 must reach at least `90%` of the best benchmark
+  classifier F1 on the same task
 
-**Additional datasets to consider (pick 1-2):**
+If the gate fails:
 
-| Dataset | Labels | Domain | Why |
-|---|---|---|---|
-| AbstRCT | background/objective/method/result | medical abstracts | structured argumentation |
-| ArgMicro | proponent/opponent/claim/premise | microtexts | clean small dataset |
-| UKP Web Discourse | claim/premise | web forum posts | closest to LessWrong domain |
-| IBM Debater Claims | claim/evidence | Wikipedia | large scale |
+- stop the SAE path for span roles
+- keep the classifier path
 
-**Priority:** UKP Web Discourse if available (domain match), otherwise
-AbstRCT (clean labels, different domain for robustness).
+If the gate passes:
 
-**For each new dataset:**
-1. Write adapter in datasets.py
-2. Define label mapping to CLAIM/PREMISE/EVIDENCE/OTHER
-3. Train, evaluate, transfer to LessWrong
-4. Add to combined training if it helps transfer
+- the probe/SAE track stays alive as a research sidecar
 
-## Phase 6: Integration Into Memex Pipeline (Sprint 3-4)
+### Phase 4: SAE Track
 
-Once span role classification transfers plausibly:
+This is split into two separate experiments:
 
-1. Export best model checkpoint
-2. Write inference wrapper that takes raw text → labeled spans
-3. Integrate into lesswrong-provenance pipeline:
-   - Run after ingest, before extraction
-   - Output: per-post span annotations in parquet
-   - These become input features for source materiality classifier
-     (the plan specifies "whether the mention lies inside a
-     CLAIM/PREMISE/EVIDENCE span" as a source classifier feature)
-4. Re-evaluate source materiality classifier with span features added
-   - Does knowing "this citation appears inside a CLAIM span" improve
-     SOURCE/NOT_SOURCE classification?
+1. **pretrained SAE reuse**
+2. **custom SAE training**
 
-This is where the two classifier tracks merge.
+That split matters. The first question is whether an SAE feature basis can
+retain useful span-role signal at all. The second question is whether a
+task-targeted SAE improves on the public release.
 
-## Deliverables
+#### Phase 4A: pretrained SAE reuse
 
-After Sprint 2:
+Use a public SAE release for the same public probe model:
 
-1. PE span role baseline metrics (DeBERTa F1 on held-out test)
-2. 10-post LessWrong qualitative transfer notes
-3. CDCP adapter and cross-dataset comparison table
-4. Probe layer-wise accuracy curves (if GPU access resolved)
-5. Go/no-go on SAE for span roles
+- `Qwen/Qwen2.5-7B-Instruct`
 
-After Sprint 3:
+Goal:
 
-6. Multi-dataset training results
-7. Best model checkpoint for span role classification
-8. Integration plan for lesswrong-provenance pipeline
+- compare SAE-feature classifiers directly against the linear-probe
+  baseline
+- decide whether the SAE path is worth more compute
 
-## Comparison Table Template
+Success condition:
 
-Fill this in as runs complete:
+- best SAE-feature classifier is close enough to the best Qwen probe to
+  remain interesting as a research direction
 
-| Model | Train Data | Test Data | F1 | Accuracy | Notes |
-|---|---|---|---|---|---|
-| DeBERTa-v3-base | PE | PE test | ? | ? | Phase 1 |
-| DeBERTa-v3-base | CDCP | CDCP test | ? | ? | Phase 3 |
-| DeBERTa-v3-base | PE+CDCP | PE test | ? | ? | Phase 3 |
-| DeBERTa-v3-base | PE+CDCP | CDCP test | ? | ? | Phase 3 |
-| Probe (Qwen 7B) | PE | PE test | ? | ? | Phase 4 |
-| DeBERTa-v3-base | PE | LessWrong 10 | qualitative | - | Phase 2 |
+#### Phase 4B: custom SAE training
 
-## Acceptance Criteria
+Only do this if the pretrained SAE path is credible.
 
-Sprint 2 is successful if:
+When custom SAE training starts:
 
-- PE baseline F1 is in the expected range (0.70-0.82)
-- LessWrong transfer is qualitatively plausible on 6+/10 posts
-- CDCP adapter runs end-to-end
-- Probe experiment runs (even if gate fails)
-- All results documented in a bundle for Claude review
+- train on the best probe layers first
+- if span-role probes later show an early-layer winner, include that
+  early layer explicitly
+- do not assume the public SAE layers are the right ones for this task
 
-The argument mining track is viable if the trained span classifier
-produces visibly sensible CLAIM/PREMISE labels on LessWrong blog posts.
-If it doesn't, the domain gap is too large and in-domain labeling
-becomes necessary before this track can continue.
+This is the point where layer choice becomes an actual experimental
+question rather than a tooling constraint.
+
+## Transfer Evaluation
+
+Span-role transfer is easier to interpret than source transfer because it
+does **not** depend on candidate generation.
+
+That means transfer review should be explicit and qualitative.
+
+Use the fixed 10-post LessWrong seed set and score each post on:
+
+1. are predicted `CLAIM` spans actual assertions?
+2. are predicted `PREMISE` spans actual support or reasoning?
+3. if `EVIDENCE` exists, are those spans concrete support rather than
+   generic exposition?
+4. are span boundaries coherent?
+5. is the model obviously degenerate?
+
+The point is not to pretend we have a formal gold set yet. The point is
+to decide whether zero-shot transfer is promising enough to justify more
+work.
+
+## Decisions
+
+### Continue the span-role track if:
+
+- benchmark performance is solid
+- at least a majority of the 10 transfer posts look plausibly structured
+- the model is not obviously overfit to essay formatting
+
+### Pivot before adding more engineering if:
+
+- PE baseline transfers terribly
+- the evidence-bearing dataset mapping is too noisy to trust
+- probes are far below the classifier baseline
+
+## Explicit Non-Goals
+
+Not in scope for this stage:
+
+- relation linking
+- support/attack graph construction
+- pipeline integration into `lesswrong-provenance`
+- using span outputs as features for the source classifier
+- multi-document synthesis
+
+Those all come later, and only if this track works on its own.

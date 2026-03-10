@@ -1,0 +1,33 @@
+{
+  "best_layer": 1,
+  "best_metrics": {
+    "dev_f1_macro": 0.8405769700308644,
+    "dev_metrics": {
+      "accuracy": 0.8482532751091703,
+      "f1_macro": 0.8405769700308644,
+      "precision_macro": 0.849579496010209,
+      "recall_macro": 0.8354133474951319
+    },
+    "label_list": [
+      "SOURCE",
+      "NOT_SOURCE"
+    ],
+    "layer": 1,
+    "model_name": "Qwen/Qwen2.5-7B-Instruct",
+    "task": "source_materiality",
+    "test_f1_macro": 0.8380450933052755,
+    "test_metrics": {
+      "accuracy": 0.8393336915636754,
+      "f1_macro": 0.8380450933052755,
+      "precision_macro": 0.839393408339467,
+      "recall_macro": 0.8372350848842824
+    }
+  },
+  "model_name": "Qwen/Qwen2.5-7B-Instruct",
+  "selected_layers": [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28
+  ],
+  "selection_key": "dev_f1_macro",
+  "task": "source_materiality"
+}
+

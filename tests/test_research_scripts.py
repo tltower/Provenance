@@ -214,6 +214,105 @@ def test_run_scicite_source_experiment_transfer_only_requires_run_transfer(
         raise AssertionError("Expected transfer-only without run-transfer to fail")
 
 
+def test_run_source_candidate_transfer_dispatches_model_transfer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    script_path = _repo_root() / "scripts" / "run_source_candidate_transfer.py"
+    module = _load_module("run_source_candidate_transfer_test", script_path)
+    calls: list[tuple[str, Path]] = []
+
+    monkeypatch.setattr(
+        module,
+        "run_source_candidate_transfer_hf_model",
+        lambda **kwargs: calls.append(("model", kwargs["model_dir"])),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_source_candidate_transfer_probe",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("probe transfer should not run")),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_source_candidate_transfer.py",
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    module.main()
+    assert calls == [("model", tmp_path / "model")]
+
+
+def test_run_sae_experiment_dispatches_with_parsed_layers(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    script_path = _repo_root() / "scripts" / "run_sae_experiment.py"
+    module = _load_module("run_sae_experiment_test", script_path)
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(module, "validate_task_dataset", lambda task, dataset: calls.append(("validate", (task, dataset))))
+    monkeypatch.setattr(
+        module,
+        "run_sae_experiment",
+        lambda **kwargs: calls.append(("sae", kwargs["layers"])) or {"best_layer": 7, "best_f1": 0.8},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_sae_experiment.py",
+            "--task",
+            "source_materiality",
+            "--dataset",
+            "scicite",
+            "--model-name",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--input-dir",
+            str(tmp_path / "input"),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--layers",
+            "3,7,11",
+        ],
+    )
+
+    module.main()
+    out = capsys.readouterr().out
+
+    assert ("validate", ("source_materiality", "scicite")) in calls
+    assert ("sae", (3, 7, 11)) in calls
+    assert '"best_layer": 7' in out
+
+
+def test_run_source_candidate_transfer_requires_probe_model_name(
+    monkeypatch, tmp_path: Path
+) -> None:
+    script_path = _repo_root() / "scripts" / "run_source_candidate_transfer.py"
+    module = _load_module("run_source_candidate_transfer_error_test", script_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_source_candidate_transfer.py",
+            "--probe-dir",
+            str(tmp_path / "probe"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    try:
+        module.main()
+    except RuntimeError as exc:
+        assert "--probe-model-name is required" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected missing probe model name to fail")
+
+
 def test_package_run_artifacts_script_dispatches(monkeypatch, tmp_path: Path, capsys) -> None:
     script_path = _repo_root() / "scripts" / "package_run_artifacts.py"
     module = _load_module("package_run_artifacts_test", script_path)

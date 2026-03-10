@@ -1,0 +1,23 @@
+{
+  "cuda": {
+    "available": true,
+    "device_count": 1,
+    "device_name": "NVIDIA A100-SXM4-80GB"
+  },
+  "extra": {
+    "input_dir": "/workspace/data/scicite_material_benchmark",
+    "max_length": 256,
+    "selection_key": "dev_f1_macro"
+  },
+  "generated_at_utc": "2026-03-10T16:38:19.441820+00:00",
+  "git_head": "0e514335bab94fd105a0c3c110338500ff00d8b0",
+  "package_versions": {
+    "accelerate": "1.13.0",
+    "protobuf": "7.34.0",
+    "scikit-learn": "1.8.0",
+    "torch": "2.10.0",
+    "transformers": "4.57.6"
+  },
+  "platform": "Linux-6.8.0-100-generic-x86_64-with-glibc2.35",
+  "python_version": "3.11.10"
+}

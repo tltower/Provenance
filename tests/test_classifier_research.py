@@ -9,7 +9,11 @@ from memex_research.classifier_research.datasets import (
     normalize_scicite_source_label,
     normalize_scicite_source_row,
 )
-from memex_research.classifier_research.hf_models import SUPPORTED_PROBE_MODELS
+from memex_research.classifier_research.hf_models import (
+    SUPPORTED_PROBE_MODELS,
+    SUPPORTED_SAE_MODELS,
+    get_sae_release_spec,
+)
 from memex_research.classifier_research.probes import (
     _create_logistic_regression,
     _emit_probe_progress,
@@ -27,8 +31,10 @@ from memex_research.classifier_research.tasks import (
 )
 from memex_research.classifier_research.transfer_eval import (
     _candidate_context_window,
+    _write_source_candidate_transfer_summary,
     _write_source_transfer_summary,
     build_transfer_source_candidates,
+    load_source_candidate_transfer_rows,
     load_transfer_manifest,
 )
 
@@ -135,6 +141,28 @@ def test_transfer_manifest_points_to_existing_seed_posts() -> None:
     assert str(manifest["posts"][0]["raw_path"]).startswith("posts/")
 
 
+def test_load_source_candidate_transfer_rows_requires_core_fields(tmp_path: Path) -> None:
+    path = tmp_path / "candidates.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "post_id": "post-1",
+                "title": "Example",
+                "slug": "example",
+                "candidate_id": "cand-1",
+                "name": "Example Source",
+                "context": "According to Example Source, this is true.",
+                "gold_label": "SOURCE",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rows = load_source_candidate_transfer_rows(path)
+    assert rows[0]["candidate_id"] == "cand-1"
+    assert rows[0]["gold_label"] == "SOURCE"
+
+
 def test_build_transfer_source_candidates_collects_bibliography_and_links() -> None:
     text = (
         'Quoted discussion of "The Book of Proof". '
@@ -181,6 +209,13 @@ def test_candidate_context_window_returns_none_when_candidate_is_not_in_text() -
 
 def test_public_probe_model_is_supported() -> None:
     assert "Qwen/Qwen2.5-7B-Instruct" in SUPPORTED_PROBE_MODELS
+
+
+def test_public_sae_model_is_supported() -> None:
+    assert "Qwen/Qwen2.5-7B-Instruct" in SUPPORTED_SAE_MODELS
+    spec = get_sae_release_spec("Qwen/Qwen2.5-7B-Instruct")
+    assert spec.hidden_state_index_for_layer(3) == 4
+    assert spec.sae_id_for_layer(7) == "resid_post_layer_7/trainer_1"
 
 
 def test_create_logistic_regression_supports_newer_and_older_signatures() -> None:
@@ -250,6 +285,28 @@ def test_write_source_transfer_summary_ignores_diagnostics_file(tmp_path: Path) 
     assert summary["generated_candidates"] == 2
     assert summary["skipped_no_context"] == 1
     assert summary["generated_origin_counts"]["external_link"] == 1
+
+
+def test_write_source_candidate_transfer_summary_reports_gold_metrics(tmp_path: Path) -> None:
+    (tmp_path / "abc123.json").write_text(
+        json.dumps(
+            {
+                "post_id": "abc123",
+                "title": "Example",
+                "slug": "example",
+                "candidates": [
+                    {"predicted_label": "SOURCE", "gold_label": "SOURCE"},
+                    {"predicted_label": "NOT_SOURCE", "gold_label": "NOT_SOURCE"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_source_candidate_transfer_summary(tmp_path)
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["candidate_count"] == 2
+    assert summary["labeled_candidate_count"] == 2
+    assert summary["gold_metrics"]["accuracy"] == 1.0
 
 
 def test_write_run_inventory_summarizes_sizes_and_metrics(tmp_path: Path) -> None:

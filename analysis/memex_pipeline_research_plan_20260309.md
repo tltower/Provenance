@@ -218,6 +218,8 @@ Success criterion:
 - strong benchmark performance relative to literature / baseline
 - transfer predictions on the fixed LessWrong set look plausibly
   structured, not degenerate
+- if the Qwen probe is competitive enough, pretrained-SAE experiments
+  become justified as a separate follow-on study
 
 ## Track B: Citation / Source Materiality Research
 
@@ -241,13 +243,26 @@ Recommended datasets:
 3. news/source-use datasets later if needed
 
 Immediate next work:
-- improve LessWrong candidate generation before judging transfer quality
-- do not confuse classifier performance with candidate-generator failure
+- separate transfer evaluation into:
+  - candidate generation quality
+  - candidate-only classifier quality
+- use candidate-only LessWrong transfer before judging the classifier
+- improve heuristic candidate generation only as a separate engineering
+  track
+- once the public Qwen probe path is benchmarked, compare pretrained-SAE
+  feature classifiers against the probe before deciding whether to train
+  a task-specific SAE
 
 Success criterion:
 - benchmark performance is strong and reproducible
-- transfer behavior on LessWrong becomes interpretable once candidate
-  generation is fixed
+- candidate-only transfer on LessWrong is interpretable
+- heuristic transfer can then be used to debug the extractor, not the
+  classifier
+
+SAE note:
+- if pretrained SAE reuse is competitive, continue the SAE sidecar
+- if not, do not jump straight to custom SAE training without a stronger
+  reason
 
 ## Track C: Synthesis / Tagging Research
 
