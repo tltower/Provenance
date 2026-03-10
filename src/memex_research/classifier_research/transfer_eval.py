@@ -174,31 +174,6 @@ def _extract_inline_title_candidates(text: str) -> list[dict[str, Any]]:
     return candidates
 
 
-def build_transfer_source_candidates(*, raw_post: dict[str, Any], text: str) -> list[dict[str, Any]]:
-    deduped: dict[tuple[str, str], dict[str, Any]] = {}
-    for candidate in (
-        _extract_bibliography_candidates(text)
-        + _extract_inline_title_candidates(text)
-        + _extract_external_link_candidates(raw_post)
-    ):
-        name = str(candidate.get("name") or "").strip()
-        url = str(candidate.get("url") or "").strip() or None
-        if not name:
-            continue
-        if candidate.get("origin") == "external_link" and not _candidate_name_tokens(name):
-            continue
-        deduped.setdefault(
-            _source_key(name, url),
-            {
-                "name": name,
-                "url": url,
-                "author": candidate.get("author"),
-                "origin": candidate.get("origin"),
-            },
-        )
-    return list(deduped.values())
-
-
 def _candidate_context_window(text: str, candidate_name: str, *, radius: int = 220) -> str | None:
     if not text:
         return None
@@ -217,6 +192,33 @@ def _candidate_context_window(text: str, candidate_name: str, *, radius: int = 2
     return text[left:right].strip()
 
 
+def build_transfer_source_candidates(*, raw_post: dict[str, Any], text: str) -> list[dict[str, Any]]:
+    deduped: dict[tuple[str, str], dict[str, Any]] = {}
+    for candidate in (
+        _extract_bibliography_candidates(text)
+        + _extract_inline_title_candidates(text)
+        + _extract_external_link_candidates(raw_post)
+    ):
+        name = str(candidate.get("name") or "").strip()
+        url = str(candidate.get("url") or "").strip() or None
+        if not name:
+            continue
+        if candidate.get("origin") == "external_link":
+            has_text_anchor = _candidate_context_window(text, name) is not None
+            if not _looks_like_title_candidate(name) and not has_text_anchor:
+                continue
+        deduped.setdefault(
+            _source_key(name, url),
+            {
+                "name": name,
+                "url": url,
+                "author": candidate.get("author"),
+                "origin": candidate.get("origin"),
+            },
+        )
+    return list(deduped.values())
+
+
 def _write_source_transfer_summary(output_dir: Path) -> None:
     rows = [
         json.loads(path.read_text())
@@ -224,13 +226,23 @@ def _write_source_transfer_summary(output_dir: Path) -> None:
         if path.name not in {"summary.json", "diagnostics.json", "run_config.json", "metrics.json"}
     ]
     label_counts: Counter[str] = Counter()
+    generated_origin_counts: Counter[str] = Counter()
+    kept_origin_counts: Counter[str] = Counter()
     total_candidates = 0
+    generated_candidates = 0
+    skipped_no_context = 0
     posts_with_candidates = 0
     for row in rows:
         candidates = row.get("candidates", [])
         if candidates:
             posts_with_candidates += 1
         total_candidates += len(candidates)
+        generated_candidates += int(row.get("generated_candidate_count", len(candidates)))
+        skipped_no_context += int(row.get("skipped_no_context_count", 0))
+        for origin, count in dict(row.get("generated_origin_counts") or {}).items():
+            generated_origin_counts[str(origin)] += int(count)
+        for origin, count in dict(row.get("kept_origin_counts") or {}).items():
+            kept_origin_counts[str(origin)] += int(count)
         for candidate in candidates:
             label = str(candidate.get("predicted_label") or "")
             if label:
@@ -238,7 +250,11 @@ def _write_source_transfer_summary(output_dir: Path) -> None:
     summary = {
         "post_count": len(rows),
         "posts_with_candidates": posts_with_candidates,
+        "generated_candidates": generated_candidates,
         "total_candidates": total_candidates,
+        "skipped_no_context": skipped_no_context,
+        "generated_origin_counts": dict(sorted(generated_origin_counts.items())),
+        "kept_origin_counts": dict(sorted(kept_origin_counts.items())),
         "predicted_label_counts": dict(sorted(label_counts.items())),
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
@@ -346,9 +362,15 @@ def run_source_transfer_hf_model(
     for row in _load_transfer_posts(manifest_path):
         candidates = build_transfer_source_candidates(raw_post=row["post"], text=row["text"])
         candidate_outputs: list[dict[str, Any]] = []
+        generated_origin_counts: Counter[str] = Counter(
+            str(candidate.get("origin") or "unknown") for candidate in candidates
+        )
+        kept_origin_counts: Counter[str] = Counter()
+        skipped_no_context = 0
         for candidate in candidates:
             context = _candidate_context_window(row["text"], str(candidate.get("name") or ""))
             if not context:
+                skipped_no_context += 1
                 continue
             encoded = tokenizer(context, truncation=True, max_length=max_length, return_tensors="pt")
             encoded = {key: value.to(device) for key, value in encoded.items()}
@@ -356,9 +378,12 @@ def run_source_transfer_hf_model(
                 result = model(**encoded)
             logits = result.logits.detach().cpu().numpy()[0]
             pred_id = int(logits.argmax())
+            origin = str(candidate.get("origin") or "unknown")
+            kept_origin_counts[origin] += 1
             candidate_outputs.append(
                 {
                     "name": candidate.get("name"),
+                    "origin": origin,
                     "url": candidate.get("url"),
                     "context": context,
                     "predicted_label": model.config.id2label[pred_id],
@@ -371,6 +396,10 @@ def run_source_transfer_hf_model(
                     "post_id": row["post_id"],
                     "title": row["title"],
                     "slug": row["slug"],
+                    "generated_candidate_count": len(candidates),
+                    "skipped_no_context_count": skipped_no_context,
+                    "generated_origin_counts": dict(sorted(generated_origin_counts.items())),
+                    "kept_origin_counts": dict(sorted(kept_origin_counts.items())),
                     "candidates": candidate_outputs,
                 },
                 indent=2,
@@ -453,9 +482,15 @@ def run_source_transfer_probe(
     for row in _load_transfer_posts(manifest_path):
         candidates = build_transfer_source_candidates(raw_post=row["post"], text=row["text"])
         candidate_outputs: list[dict[str, Any]] = []
+        generated_origin_counts: Counter[str] = Counter(
+            str(candidate.get("origin") or "unknown") for candidate in candidates
+        )
+        kept_origin_counts: Counter[str] = Counter()
+        skipped_no_context = 0
         for candidate in candidates:
             context = _candidate_context_window(row["text"], str(candidate.get("name") or ""))
             if not context:
+                skipped_no_context += 1
                 continue
             encoded = tokenizer(context, truncation=True, max_length=max_length, return_tensors="pt")
             encoded = {key: value.to(device) for key, value in encoded.items()}
@@ -465,9 +500,12 @@ def run_source_transfer_probe(
             attention_mask = encoded["attention_mask"][0].detach().cpu().numpy().astype(bool)
             pooled = hidden_state[attention_mask].mean(axis=0).reshape(1, -1)
             pred_id = int(classifier.predict(pooled)[0])
+            origin = str(candidate.get("origin") or "unknown")
+            kept_origin_counts[origin] += 1
             candidate_outputs.append(
                 {
                     "name": candidate.get("name"),
+                    "origin": origin,
                     "url": candidate.get("url"),
                     "context": context,
                     "predicted_label": summary["best_metrics"]["label_list"][pred_id],
@@ -479,6 +517,10 @@ def run_source_transfer_probe(
                     "post_id": row["post_id"],
                     "title": row["title"],
                     "slug": row["slug"],
+                    "generated_candidate_count": len(candidates),
+                    "skipped_no_context_count": skipped_no_context,
+                    "generated_origin_counts": dict(sorted(generated_origin_counts.items())),
+                    "kept_origin_counts": dict(sorted(kept_origin_counts.items())),
                     "candidates": candidate_outputs,
                     "best_layer": best_layer,
                 },

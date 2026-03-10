@@ -35,6 +35,7 @@ make bootstrap
 make scicite-deberta
 make scicite-scibert
 make scicite-deberta-transfer
+make scicite-probe-qwen
 ```
 
 If you do not want `make`, the single-command equivalents are:
@@ -71,7 +72,9 @@ That script installs:
 
 - `git`
 - `python3-venv`
+- `tmux`
 - the local editable package with `.[dev,research]`
+- and upgrades `pip`, `setuptools`, and `wheel` before dependency install
 
 ## Expected Input Layout
 

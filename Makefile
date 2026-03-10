@@ -6,7 +6,7 @@ RUN_ROOT ?= $(PROJECT_ROOT)/analysis/memex_runs
 VENV_BIN := $(PROJECT_ROOT)/.venv/bin
 PYTHON := $(VENV_BIN)/python
 
-.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer
+.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer scicite-probe-qwen
 
 bootstrap:
 	bash scripts/bootstrap_remote.sh
@@ -67,3 +67,11 @@ scicite-scibert-transfer:
 		--run-transfer \
 		--transfer-only \
 		--skip-quality-checks
+
+scicite-probe-qwen:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_probe_experiment.py \
+		--task source_materiality \
+		--dataset scicite \
+		--model-name Qwen/Qwen2.5-7B-Instruct \
+		--input-dir $(DATA_ROOT)/scicite_material_benchmark \
+		--output-dir $(RUN_ROOT)/scicite_probe_qwen25_7b_instruct

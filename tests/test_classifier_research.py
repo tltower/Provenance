@@ -140,7 +140,20 @@ def test_build_transfer_source_candidates_collects_bibliography_and_links() -> N
     candidates = build_transfer_source_candidates(raw_post=raw_post, text=text)
     names = {str(candidate["name"]) for candidate in candidates}
     assert "The Book of Proof" in names
-    assert "theorem guides" in names
+
+
+def test_build_transfer_source_candidates_filters_unanchored_external_links() -> None:
+    text = "This post discusses The Book of Proof."
+    raw_post = {
+        "external_links": [
+            "https://example.com/book-of-proof",
+            "https://foo.test/completely-unrelated-reading-list",
+        ]
+    }
+    candidates = build_transfer_source_candidates(raw_post=raw_post, text=text)
+    names = {str(candidate["name"]) for candidate in candidates}
+    assert "book of proof" in {name.lower() for name in names}
+    assert "completely unrelated reading list" not in {name.lower() for name in names}
 
 
 def test_build_transfer_source_candidates_ignores_non_title_quoted_spans() -> None:
@@ -180,7 +193,16 @@ def test_write_run_reports_emits_diagnostics_and_markdown(tmp_path: Path) -> Non
 
 def test_write_source_transfer_summary_ignores_diagnostics_file(tmp_path: Path) -> None:
     (tmp_path / "abc123.json").write_text(
-        json.dumps({"post_id": "abc123", "candidates": [{"predicted_label": "SOURCE"}]}),
+        json.dumps(
+            {
+                "post_id": "abc123",
+                "generated_candidate_count": 2,
+                "skipped_no_context_count": 1,
+                "generated_origin_counts": {"bibliography": 1, "external_link": 1},
+                "kept_origin_counts": {"bibliography": 1},
+                "candidates": [{"predicted_label": "SOURCE"}],
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "diagnostics.json").write_text(json.dumps({"generated_at_utc": "now"}), encoding="utf-8")
@@ -188,6 +210,9 @@ def test_write_source_transfer_summary_ignores_diagnostics_file(tmp_path: Path) 
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert summary["post_count"] == 1
     assert summary["total_candidates"] == 1
+    assert summary["generated_candidates"] == 2
+    assert summary["skipped_no_context"] == 1
+    assert summary["generated_origin_counts"]["external_link"] == 1
 
 
 def test_write_run_inventory_summarizes_sizes_and_metrics(tmp_path: Path) -> None:
