@@ -214,6 +214,7 @@ Classifier runs also write:
 
 Probe runs also write:
 
+- `probe_status.json`
 - `summary.json`
 - `layer_XX.metrics.json`
 - `layer_XX.probe.joblib`
@@ -285,12 +286,20 @@ python scripts/run_probe_experiment.py \
 
 Each probe run writes:
 
+- `probe_status.json`
 - `summary.json`
 - `run_config.json`
 - `diagnostics.json`
 - `report.md`
 - `layer_XX.metrics.json`
 - `layer_XX.probe.joblib`
+
+During long probe runs, `probe_status.json` is the fastest heartbeat. It is updated while:
+
+- loading the tokenizer/model
+- caching hidden states for each split
+- fitting each layer probe
+- completing the run
 
 Transfer is opt-in:
 

@@ -69,6 +69,7 @@ scicite-scibert-transfer:
 		--skip-quality-checks
 
 scicite-probe-qwen:
+	mkdir -p $(RUN_ROOT)/scicite_probe_qwen25_7b_instruct
 	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_probe_experiment.py \
 		--task source_materiality \
 		--dataset scicite \

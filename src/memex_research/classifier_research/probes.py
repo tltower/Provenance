@@ -3,8 +3,9 @@ from __future__ import annotations
 import inspect
 import json
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from memex_research.classifier_research.hf_models import create_probe_components
 from memex_research.classifier_research.reporting import write_run_reports
@@ -54,6 +55,28 @@ def _device_for_model(model: Any) -> Any:
     return device
 
 
+def _emit_probe_progress(
+    output_dir: Path,
+    *,
+    phase: str,
+    model_name: str,
+    task: str,
+    message: str,
+    **extra: Any,
+) -> None:
+    payload: dict[str, Any] = {
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "phase": phase,
+        "task": task,
+        "model_name": model_name,
+        "message": message,
+    }
+    if extra:
+        payload.update(extra)
+    (output_dir / "probe_status.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
+    print(f"[probe:{phase}] {message}", flush=True)
+
+
 def _create_logistic_regression(logistic_regression_cls: Any) -> Any:
     kwargs: dict[str, Any] = {"max_iter": 1000}
     if "multi_class" in inspect.signature(logistic_regression_cls).parameters:
@@ -70,12 +93,14 @@ def _sequence_hidden_state_cache(
     cache_dir: Path,
     split_name: str,
     layers: tuple[int, ...] | None,
+    progress_callback: Callable[..., None] | None = None,
 ) -> tuple[int, ...]:
     _joblib, np, torch, _libs = _require_probe_stack()
     layer_vectors: dict[int, list[Any]] = {}
     device = _device_for_model(model)
     selected_layers: tuple[int, ...] | None = None
-    for row in records:
+    total_records = len(records)
+    for index, row in enumerate(records, start=1):
         tokenized = tokenizer(
             str(row["context"]),
             truncation=True,
@@ -89,12 +114,21 @@ def _sequence_hidden_state_cache(
         if selected_layers is None:
             selected_layers = _select_layers(layers, len(hidden_states))
             layer_vectors = {layer_index: [] for layer_index in selected_layers}
+            if progress_callback is not None:
+                progress_callback(
+                    split_name=split_name,
+                    processed=index,
+                    total=total_records,
+                    selected_layers=list(selected_layers),
+                )
         attention_mask = tokenized["attention_mask"][0].detach().cpu().numpy().astype(bool)
         for layer_index in selected_layers:
             hidden_state = hidden_states[layer_index]
             vectors = hidden_state[0].detach().cpu().numpy()
             pooled = vectors[attention_mask].mean(axis=0).astype(np.float16)
             layer_vectors[layer_index].append(pooled)
+        if progress_callback is not None and (index == 1 or index == total_records or index % 100 == 0):
+            progress_callback(split_name=split_name, processed=index, total=total_records)
     if selected_layers is None:
         raise RuntimeError(f"No records available for split {split_name!r}")
     for layer_index, vectors in layer_vectors.items():
@@ -111,13 +145,15 @@ def _token_hidden_state_cache(
     cache_dir: Path,
     split_name: str,
     layers: tuple[int, ...] | None,
+    progress_callback: Callable[..., None] | None = None,
 ) -> tuple[int, ...]:
     _joblib, np, torch, _libs = _require_probe_stack()
     layer_vectors: dict[int, list[Any]] = {}
     labels: list[str] = []
     device = _device_for_model(model)
     selected_layers: tuple[int, ...] | None = None
-    for row in records:
+    total_records = len(records)
+    for index, row in enumerate(records, start=1):
         tokenized: Any = tokenizer(
             list(row["tokens"]),
             is_split_into_words=True,
@@ -132,6 +168,13 @@ def _token_hidden_state_cache(
         if selected_layers is None:
             selected_layers = _select_layers(layers, len(hidden_states))
             layer_vectors = {layer_index: [] for layer_index in selected_layers}
+            if progress_callback is not None:
+                progress_callback(
+                    split_name=split_name,
+                    processed=index,
+                    total=total_records,
+                    selected_layers=list(selected_layers),
+                )
         word_ids = tokenized.word_ids(0)
         first_positions: dict[int, int] = {}
         for position, word_id in enumerate(word_ids):
@@ -143,6 +186,8 @@ def _token_hidden_state_cache(
             for layer_index in selected_layers:
                 vector = hidden_states[layer_index][0, position].detach().cpu().numpy().astype(np.float16)
                 layer_vectors[layer_index].append(vector)
+        if progress_callback is not None and (index == 1 or index == total_records or index % 25 == 0):
+            progress_callback(split_name=split_name, processed=index, total=total_records)
     if selected_layers is None:
         raise RuntimeError(f"No records available for split {split_name!r}")
     for layer_index, vectors in layer_vectors.items():
@@ -191,14 +236,33 @@ def run_probe_experiment(
     joblib, _np, _torch, libs = _require_probe_stack()
     LogisticRegression, _accuracy_score, _prf = libs
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     split_rows = load_jsonl_splits(input_dir)
     train_rows = split_rows["train"]
     dev_rows = split_rows.get("dev")
     test_rows = split_rows["test"]
 
+    _emit_probe_progress(
+        output_dir,
+        phase="loading_model",
+        task=task,
+        model_name=model_name,
+        message="Loading tokenizer and model",
+        split_counts={
+            "train": len(train_rows),
+            "dev": len(dev_rows) if dev_rows else 0,
+            "test": len(test_rows),
+        },
+        max_length=max_length,
+    )
     tokenizer, model = create_probe_components(model_name)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _emit_probe_progress(
+        output_dir,
+        phase="model_loaded",
+        task=task,
+        model_name=model_name,
+        message="Tokenizer and model loaded; starting hidden-state caching",
+    )
     label_list: list[str]
     selected_layers: tuple[int, ...]
     gold_dev: list[int] | None
@@ -215,6 +279,14 @@ def run_probe_experiment(
                 cache_dir=cache_dir,
                 split_name="train",
                 layers=layers,
+                progress_callback=lambda **kwargs: _emit_probe_progress(
+                    output_dir,
+                    phase="caching_hidden_states",
+                    task=task,
+                    model_name=model_name,
+                    message="Caching hidden states for source-materiality split",
+                    **kwargs,
+                ),
             )
             if dev_rows:
                 _sequence_hidden_state_cache(
@@ -225,6 +297,14 @@ def run_probe_experiment(
                     cache_dir=cache_dir,
                     split_name="dev",
                     layers=selected_layers,
+                    progress_callback=lambda **kwargs: _emit_probe_progress(
+                        output_dir,
+                        phase="caching_hidden_states",
+                        task=task,
+                        model_name=model_name,
+                        message="Caching hidden states for source-materiality split",
+                        **kwargs,
+                    ),
                 )
             _sequence_hidden_state_cache(
                 test_rows,
@@ -234,6 +314,14 @@ def run_probe_experiment(
                 cache_dir=cache_dir,
                 split_name="test",
                 layers=selected_layers,
+                progress_callback=lambda **kwargs: _emit_probe_progress(
+                    output_dir,
+                    phase="caching_hidden_states",
+                    task=task,
+                    model_name=model_name,
+                    message="Caching hidden states for source-materiality split",
+                    **kwargs,
+                ),
             )
             gold_train = [label_list.index(str(row["label"])) for row in train_rows]
             gold_dev = [label_list.index(str(row["label"])) for row in dev_rows] if dev_rows else None
@@ -248,6 +336,14 @@ def run_probe_experiment(
                 cache_dir=cache_dir,
                 split_name="train",
                 layers=layers,
+                progress_callback=lambda **kwargs: _emit_probe_progress(
+                    output_dir,
+                    phase="caching_hidden_states",
+                    task=task,
+                    model_name=model_name,
+                    message="Caching hidden states for span-role split",
+                    **kwargs,
+                ),
             )
             if dev_rows:
                 _token_hidden_state_cache(
@@ -258,6 +354,14 @@ def run_probe_experiment(
                     cache_dir=cache_dir,
                     split_name="dev",
                     layers=selected_layers,
+                    progress_callback=lambda **kwargs: _emit_probe_progress(
+                        output_dir,
+                        phase="caching_hidden_states",
+                        task=task,
+                        model_name=model_name,
+                        message="Caching hidden states for span-role split",
+                        **kwargs,
+                    ),
                 )
             _token_hidden_state_cache(
                 test_rows,
@@ -267,6 +371,14 @@ def run_probe_experiment(
                 cache_dir=cache_dir,
                 split_name="test",
                 layers=selected_layers,
+                progress_callback=lambda **kwargs: _emit_probe_progress(
+                    output_dir,
+                    phase="caching_hidden_states",
+                    task=task,
+                    model_name=model_name,
+                    message="Caching hidden states for span-role split",
+                    **kwargs,
+                ),
             )
             gold_train = [label_list.index(label) for label in _load_cached_label_strings(cache_dir, split_name="train")]
             gold_dev = (
@@ -283,7 +395,26 @@ def run_probe_experiment(
         best_score = float("-inf")
         selection_key = "dev_f1_macro" if gold_dev is not None else "test_f1_macro"
 
-        for layer_index in selected_layers:
+        _emit_probe_progress(
+            output_dir,
+            phase="fitting_layers",
+            task=task,
+            model_name=model_name,
+            message="Hidden-state caching complete; fitting per-layer probes",
+            selected_layers=list(selected_layers),
+        )
+        total_layers = len(selected_layers)
+        for layer_position, layer_index in enumerate(selected_layers, start=1):
+            _emit_probe_progress(
+                output_dir,
+                phase="fitting_layers",
+                task=task,
+                model_name=model_name,
+                message=f"Fitting probe for layer {layer_index}",
+                current_layer=layer_index,
+                layer_position=layer_position,
+                total_layers=total_layers,
+            )
             clf = _create_logistic_regression(LogisticRegression)
             clf.fit(_load_cached_layer_vectors(cache_dir, split_name="train", layer_index=layer_index), gold_train)
 
@@ -322,6 +453,21 @@ def run_probe_experiment(
             if score > best_score:
                 best_score = score
                 best_summary = summary
+
+            _emit_probe_progress(
+                output_dir,
+                phase="fitting_layers",
+                task=task,
+                model_name=model_name,
+                message=f"Completed layer {layer_index}",
+                current_layer=layer_index,
+                layer_position=layer_position,
+                total_layers=total_layers,
+                selection_key=selection_key,
+                current_score=score,
+                best_layer=best_summary["layer"] if best_summary is not None else None,
+                best_score=best_score if best_summary is not None else None,
+            )
 
     if best_summary is None:
         raise RuntimeError("Probe experiment produced no layer summaries.")
@@ -363,5 +509,15 @@ def run_probe_experiment(
             "selection_key": selection_key,
             "max_length": max_length,
         },
+    )
+    _emit_probe_progress(
+        output_dir,
+        phase="complete",
+        task=task,
+        model_name=model_name,
+        message="Probe experiment complete",
+        best_layer=summary["best_layer"],
+        selection_key=selection_key,
+        best_score=summary["best_metrics"][selection_key],
     )
     return summary

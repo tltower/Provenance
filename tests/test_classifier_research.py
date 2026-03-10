@@ -10,7 +10,10 @@ from memex_research.classifier_research.datasets import (
     normalize_scicite_source_row,
 )
 from memex_research.classifier_research.hf_models import SUPPORTED_PROBE_MODELS
-from memex_research.classifier_research.probes import _create_logistic_regression
+from memex_research.classifier_research.probes import (
+    _create_logistic_regression,
+    _emit_probe_progress,
+)
 from memex_research.classifier_research.reporting import write_run_reports
 from memex_research.classifier_research.splits import (
     discover_named_splits,
@@ -196,6 +199,21 @@ def test_create_logistic_regression_supports_newer_and_older_signatures() -> Non
 
     assert calls[0] == {"max_iter": 1000, "multi_class": "auto"}
     assert calls[1] == {"max_iter": 1000}
+
+
+def test_emit_probe_progress_writes_status_file(tmp_path: Path, capsys) -> None:
+    _emit_probe_progress(
+        tmp_path,
+        phase="loading_model",
+        model_name="dummy/model",
+        task="source_materiality",
+        message="Loading model",
+        split_counts={"train": 1, "dev": 0, "test": 1},
+    )
+    status = json.loads((tmp_path / "probe_status.json").read_text())
+    assert status["phase"] == "loading_model"
+    assert status["split_counts"]["train"] == 1
+    assert "[probe:loading_model] Loading model" in capsys.readouterr().out
 
 
 def test_write_run_reports_emits_diagnostics_and_markdown(tmp_path: Path) -> None:
