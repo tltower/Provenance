@@ -10,6 +10,7 @@ from memex_research.classifier_research.datasets import (
     normalize_scicite_source_row,
 )
 from memex_research.classifier_research.hf_models import SUPPORTED_PROBE_MODELS
+from memex_research.classifier_research.probes import _create_logistic_regression
 from memex_research.classifier_research.reporting import write_run_reports
 from memex_research.classifier_research.splits import (
     discover_named_splits,
@@ -177,6 +178,24 @@ def test_candidate_context_window_returns_none_when_candidate_is_not_in_text() -
 
 def test_public_probe_model_is_supported() -> None:
     assert "Qwen/Qwen2.5-7B-Instruct" in SUPPORTED_PROBE_MODELS
+
+
+def test_create_logistic_regression_supports_newer_and_older_signatures() -> None:
+    calls: list[dict[str, object]] = []
+
+    class WithMultiClass:
+        def __init__(self, max_iter: int, multi_class: str) -> None:
+            calls.append({"max_iter": max_iter, "multi_class": multi_class})
+
+    class WithoutMultiClass:
+        def __init__(self, max_iter: int) -> None:
+            calls.append({"max_iter": max_iter})
+
+    _create_logistic_regression(WithMultiClass)
+    _create_logistic_regression(WithoutMultiClass)
+
+    assert calls[0] == {"max_iter": 1000, "multi_class": "auto"}
+    assert calls[1] == {"max_iter": 1000}
 
 
 def test_write_run_reports_emits_diagnostics_and_markdown(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import tempfile
 from pathlib import Path
@@ -51,6 +52,13 @@ def _device_for_model(model: Any) -> Any:
     model.to(device)
     model.eval()
     return device
+
+
+def _create_logistic_regression(logistic_regression_cls: Any) -> Any:
+    kwargs: dict[str, Any] = {"max_iter": 1000}
+    if "multi_class" in inspect.signature(logistic_regression_cls).parameters:
+        kwargs["multi_class"] = "auto"
+    return logistic_regression_cls(**kwargs)
 
 
 def _sequence_hidden_state_cache(
@@ -276,7 +284,7 @@ def run_probe_experiment(
         selection_key = "dev_f1_macro" if gold_dev is not None else "test_f1_macro"
 
         for layer_index in selected_layers:
-            clf = LogisticRegression(max_iter=1000, multi_class="auto")
+            clf = _create_logistic_regression(LogisticRegression)
             clf.fit(_load_cached_layer_vectors(cache_dir, split_name="train", layer_index=layer_index), gold_train)
 
             test_pred = clf.predict(_load_cached_layer_vectors(cache_dir, split_name="test", layer_index=layer_index)).tolist()
