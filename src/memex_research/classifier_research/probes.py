@@ -154,14 +154,15 @@ def _token_hidden_state_cache(
     selected_layers: tuple[int, ...] | None = None
     total_records = len(records)
     for index, row in enumerate(records, start=1):
-        tokenized: Any = tokenizer(
+        batch_encoding: Any = tokenizer(
             list(row["tokens"]),
             is_split_into_words=True,
             truncation=True,
             max_length=max_length,
             return_tensors="pt",
         )
-        tokenized = {key: value.to(device) for key, value in tokenized.items()}
+        word_ids = batch_encoding.word_ids(0)
+        tokenized = {key: value.to(device) for key, value in batch_encoding.items()}
         with torch.no_grad():
             output = model(**tokenized)
         hidden_states = output.hidden_states
@@ -175,7 +176,6 @@ def _token_hidden_state_cache(
                     total=total_records,
                     selected_layers=list(selected_layers),
                 )
-        word_ids = tokenized.word_ids(0)
         first_positions: dict[int, int] = {}
         for position, word_id in enumerate(word_ids):
             if word_id is None or word_id in first_positions:

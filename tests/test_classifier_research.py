@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tarfile
+from contextlib import nullcontext
 from pathlib import Path
 
 from memex_research.classifier_research import train_span as train_span_module
@@ -27,6 +28,7 @@ from memex_research.classifier_research.multidataset import (
 from memex_research.classifier_research.probes import (
     _create_logistic_regression,
     _emit_probe_progress,
+    _token_hidden_state_cache,
 )
 from memex_research.classifier_research.reporting import write_run_reports
 from memex_research.classifier_research.splits import (
@@ -543,12 +545,12 @@ def test_public_sae_model_is_supported() -> None:
     spec = get_sae_release_spec("Qwen/Qwen2.5-7B-Instruct")
     assert spec.repo_id == "andyrdt/saes-qwen2.5-7b-instruct"
     assert spec.hidden_state_index_for_layer(3) == 4
-    assert spec.sae_id_for_layer(7) == "resid_post_layer_7/trainer_1"
+    assert spec.sae_id_for_layer(7) == "resid_post_layer_7_trainer_1"
     assert spec.sae_id_candidates_for_layer(7) == (
-        "resid_post_layer_7/trainer_1",
-        "resid_post_layer_7/trainer_0",
-        "resid_post_layer_7/trainer_2",
-        "resid_post_layer_7/trainer_3",
+        "resid_post_layer_7_trainer_1",
+        "resid_post_layer_7_trainer_0",
+        "resid_post_layer_7_trainer_2",
+        "resid_post_layer_7_trainer_3",
     )
 
 
@@ -583,6 +585,90 @@ def test_emit_probe_progress_writes_status_file(tmp_path: Path, capsys) -> None:
     assert status["phase"] == "loading_model"
     assert status["split_counts"]["train"] == 1
     assert "[probe:loading_model] Loading model" in capsys.readouterr().out
+
+
+def test_token_hidden_state_cache_preserves_word_ids_from_batch_encoding(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import numpy as np
+    from memex_research.classifier_research import probes as probes_module
+
+    class FakeTensor:
+        def __init__(self, array: object) -> None:
+            self.array = np.array(array)
+
+        def to(self, _device: object) -> "FakeTensor":
+            return self
+
+        def detach(self) -> "FakeTensor":
+            return self
+
+        def cpu(self) -> "FakeTensor":
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self.array
+
+        def __getitem__(self, index: object) -> "FakeTensor":
+            return FakeTensor(self.array[index])
+
+    class FakeBatchEncoding(dict[str, FakeTensor]):
+        def word_ids(self, _batch_index: int) -> list[int | None]:
+            return [0, 1, None]
+
+    class FakeTorch:
+        @staticmethod
+        def no_grad() -> object:
+            return nullcontext()
+
+    class FakeOutput:
+        def __init__(self) -> None:
+            self.hidden_states = [
+                FakeTensor([[[1.0, 2.0], [3.0, 4.0], [9.0, 9.0]]]),
+            ]
+
+    class FakeModel:
+        def __call__(self, **_kwargs: object) -> FakeOutput:
+            return FakeOutput()
+
+    def fake_tokenizer(
+        _tokens: list[str],
+        *,
+        is_split_into_words: bool,
+        truncation: bool,
+        max_length: int,
+        return_tensors: str,
+    ) -> FakeBatchEncoding:
+        assert is_split_into_words is True
+        assert truncation is True
+        assert max_length == 32
+        assert return_tensors == "pt"
+        return FakeBatchEncoding({"input_ids": FakeTensor([[1, 2, 3]])})
+
+    monkeypatch.setattr(probes_module, "_require_probe_stack", lambda: (None, np, FakeTorch(), None))
+    monkeypatch.setattr(probes_module, "_device_for_model", lambda _model: "cpu")
+
+    selected_layers = _token_hidden_state_cache(
+        [
+            {
+                "tokens": ["Cats", "purr"],
+                "labels": ["CLAIM", "PREMISE"],
+            }
+        ],
+        tokenizer=fake_tokenizer,
+        model=FakeModel(),
+        max_length=32,
+        cache_dir=tmp_path,
+        split_name="train",
+        layers=(0,),
+    )
+
+    assert selected_layers == (0,)
+    vectors = np.load(tmp_path / "train.layer_00.npy")
+    labels = np.load(tmp_path / "train.labels.npy", allow_pickle=True).tolist()
+    assert vectors.shape == (2, 2)
+    assert labels == ["CLAIM", "PREMISE"]
 
 
 def test_emit_run_status_writes_generic_status_file(tmp_path: Path, capsys) -> None:
