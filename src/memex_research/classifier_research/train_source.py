@@ -10,6 +10,11 @@ from memex_research.classifier_research.hf_models import (
 )
 from memex_research.classifier_research.reporting import write_run_reports
 from memex_research.classifier_research.splits import load_jsonl_splits
+from memex_research.classifier_research.status import (
+    HFTrainerHeartbeatCallback,
+    emit_run_status,
+    write_run_analytics,
+)
 from memex_research.classifier_research.tasks import SOURCE_MATERIALITY_LABELS
 
 
@@ -21,7 +26,10 @@ def _require_training_stack() -> tuple[Any, Any, Any, Any]:
             accuracy_score,
             precision_recall_fscore_support,
         )
-        from transformers import Trainer, TrainingArguments  # type: ignore[import-not-found]
+        from transformers import (  # type: ignore[import-not-found]
+            Trainer,
+            TrainingArguments,
+        )
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise RuntimeError(
             "Training dependencies are not installed. Install the research extra with "
@@ -98,6 +106,18 @@ def _build_dataset(records: list[dict[str, Any]]) -> Any:
     return EncodedSequenceDataset(records)
 
 
+def _count_source_labels(records: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {label: 0 for label in SOURCE_MATERIALITY_LABELS}
+    for row in records:
+        label = str(row["label"])
+        if label in counts:
+            counts[label] += 1
+    return {
+        "record_count": len(records),
+        "label_counts": counts,
+    }
+
+
 def _create_training_args(TrainingArguments: Any, **kwargs: Any) -> Any:
     parameters = inspect.signature(TrainingArguments.__init__).parameters
     strategy_key = "evaluation_strategy"
@@ -127,6 +147,41 @@ def train_source_classifier(
     train_rows = split_rows["train"]
     eval_rows = split_rows.get("dev") or split_rows["test"]
     test_rows = split_rows["test"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    split_counts = {
+        "train": len(train_rows),
+        "eval": len(eval_rows),
+        "test": len(test_rows),
+    }
+    split_analytics = {
+        "train": _count_source_labels(train_rows),
+        "eval": _count_source_labels(eval_rows),
+        "test": _count_source_labels(test_rows),
+    }
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="loading_data",
+        message="Loaded source-materiality benchmark splits",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        split_counts=split_counts,
+        split_analytics=split_analytics,
+        input_dir=str(input_dir),
+    )
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="loading_model",
+        message="Loading tokenizer and classifier model",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        split_counts=split_counts,
+    )
 
     tokenizer, model = create_sequence_classification_components(
         model_name=model_name,
@@ -135,6 +190,22 @@ def train_source_classifier(
     encoded_train = _encode_source_records(train_rows, tokenizer, max_length=max_length)
     encoded_eval = _encode_source_records(eval_rows, tokenizer, max_length=max_length)
     encoded_test = _encode_source_records(test_rows, tokenizer, max_length=max_length)
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="encoding_complete",
+        message="Finished encoding source-materiality records",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        encoded_counts={
+            "train": len(encoded_train),
+            "eval": len(encoded_eval),
+            "test": len(encoded_test),
+        },
+        max_length=max_length,
+    )
 
     train_dataset = _build_dataset(encoded_train)
     eval_dataset = _build_dataset(encoded_eval)
@@ -159,22 +230,61 @@ def train_source_classifier(
         metric_for_best_model="f1_macro",
         greater_is_better=True,
     )
+    heartbeat_callback = HFTrainerHeartbeatCallback(
+        output_dir=output_dir,
+        task="source_materiality",
+        dataset_name="scicite",
+        model_name=model_name,
+        split_counts=split_counts,
+    )
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="trainer_ready",
+        message="Configured Hugging Face trainer",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        split_counts=split_counts,
+        training_args={
+            "learning_rate": learning_rate,
+            "per_device_train_batch_size": per_device_train_batch_size,
+            "per_device_eval_batch_size": per_device_eval_batch_size,
+            "num_train_epochs": num_train_epochs,
+            "weight_decay": weight_decay,
+            "warmup_ratio": warmup_ratio,
+            "seed": seed,
+        },
+    )
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=_build_metrics_fn(SOURCE_MATERIALITY_LABELS),
+        callbacks=[heartbeat_callback],
     )
     trainer.train()
 
+    heartbeat_callback.begin_prediction_stage("predict", total_examples=len(encoded_test))
     prediction_output = trainer.predict(test_dataset)
     test_metrics = _build_metrics_fn(SOURCE_MATERIALITY_LABELS)(
         (prediction_output.predictions, prediction_output.label_ids)
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
     model_dir = output_dir / "model"
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="saving_artifacts",
+        message="Saving trained model artifacts",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        model_dir=str(model_dir),
+    )
     trainer.save_model(str(model_dir))
     tokenizer.save_pretrained(str(model_dir))
 
@@ -226,6 +336,38 @@ def train_source_classifier(
     with (output_dir / "predictions.jsonl").open("w", encoding="utf-8") as handle:
         for row in prediction_rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+    write_run_analytics(
+        output_dir,
+        filename="train_analytics.json",
+        payload={
+            "task": "source_materiality",
+            "dataset": "scicite",
+            "model_name": model_name,
+            "split_counts": split_counts,
+            "split_analytics": split_analytics,
+            "trainer_state": {
+                "best_metric": trainer.state.best_metric,
+                "best_model_checkpoint": trainer.state.best_model_checkpoint,
+                "epoch": trainer.state.epoch,
+                "global_step": trainer.state.global_step,
+                "log_history": trainer.state.log_history,
+            },
+            "test_metrics": test_metrics,
+            "prediction_row_count": len(prediction_rows),
+        },
+    )
+    emit_run_status(
+        output_dir,
+        filename="train_status.json",
+        prefix="train",
+        phase="complete",
+        message="Completed source-materiality training run",
+        task="source_materiality",
+        dataset="scicite",
+        model_name=model_name,
+        metrics=test_metrics,
+        model_dir=str(model_dir),
+    )
     write_run_reports(
         output_dir=output_dir,
         repo_root=Path(__file__).resolve().parents[3],

@@ -348,3 +348,117 @@ def test_package_run_artifacts_script_dispatches(monkeypatch, tmp_path: Path, ca
     assert calls[0]["include_transfer"] is False
     assert calls[0]["include_trainer"] is True
     assert '"run_count": 1' in out
+
+
+def test_run_multi_span_train_dispatches_multi_dataset_training(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    script_path = _repo_root() / "scripts" / "run_multi_span_train.py"
+    module = _load_module("run_multi_span_train_test", script_path)
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        module,
+        "validate_task_dataset",
+        lambda task, dataset: calls.append(("validate", (task, dataset))),
+    )
+    monkeypatch.setattr(
+        module,
+        "train_multi_span_classifier",
+        lambda **kwargs: calls.append(("train", [spec.name for spec in kwargs["dataset_specs"]]))
+        or {"test_mean_dataset_f1": 0.61},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_multi_span_train.py",
+            "--dataset-input",
+            f"pe={tmp_path / 'pe'}",
+            "--dataset-input",
+            f"cdcp={tmp_path / 'cdcp'}",
+            "--model-name",
+            "microsoft/deberta-v3-base",
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    module.main()
+    out = capsys.readouterr().out
+
+    assert ("validate", ("span_role", "pe")) in calls
+    assert ("validate", ("span_role", "cdcp")) in calls
+    assert ("train", ["pe", "cdcp"]) in calls
+    assert '"test_mean_dataset_f1": 0.61' in out
+
+
+def test_run_concat_span_train_dispatches_single_head_training(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    script_path = _repo_root() / "scripts" / "run_concat_span_train.py"
+    module = _load_module("run_concat_span_train_test", script_path)
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        module,
+        "train_span_classifier",
+        lambda **kwargs: calls.append(("train", kwargs["dataset_name"])) or {"f1": 0.4},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_concat_span_train.py",
+            "--dataset-name",
+            "pe_cdcp_concat",
+            "--model-name",
+            "microsoft/deberta-v3-base",
+            "--input-dir",
+            str(tmp_path / "input"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    module.main()
+    out = capsys.readouterr().out
+
+    assert ("train", "pe_cdcp_concat") in calls
+    assert '"f1": 0.4' in out
+
+
+def test_merge_prepared_benchmarks_dispatches_merge(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    script_path = _repo_root() / "scripts" / "merge_prepared_benchmarks.py"
+    module = _load_module("merge_prepared_benchmarks_test", script_path)
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        module,
+        "merge_prepared_benchmark_dirs",
+        lambda **kwargs: calls.append(kwargs) or {"split_counts": {"train": 2}},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "merge_prepared_benchmarks.py",
+            "--dataset-input",
+            f"pe={tmp_path / 'pe'}",
+            "--dataset-input",
+            f"cdcp={tmp_path / 'cdcp'}",
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--shuffle",
+        ],
+    )
+
+    module.main()
+    out = capsys.readouterr().out
+
+    assert calls[0]["dataset_inputs"]["pe"] == tmp_path / "pe"
+    assert calls[0]["dataset_inputs"]["cdcp"] == tmp_path / "cdcp"
+    assert calls[0]["shuffle"] is True
+    assert '"train": 2' in out

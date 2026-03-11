@@ -488,6 +488,9 @@ python scripts/run_probe_experiment.py \
 Classifier path:
 
 - `metrics.json` is the benchmark score surface
+- `train_status.json` is the fastest heartbeat for classifier training runs
+- `train_events.jsonl` is the full stage/step/eval event stream
+- `train_analytics.json` stores split analytics and trainer history
 - `transfer/` is the qualitative LessWrong sanity check
 
 Probe path:
@@ -498,6 +501,28 @@ Probe path:
 Sprint 1 probe gate:
 
 - continue probe work only if the best probe layer reaches at least `90%` of the best DeBERTa F1 on the same benchmark task
+
+During long classifier runs, `train_status.json` is updated while:
+
+- loading benchmark data
+- loading the model
+- finishing encoding
+- configuring the trainer
+- starting training
+- beginning epochs
+- completing trainer steps
+- logging trainer metrics
+- saving checkpoints
+- completing evaluation
+- running held-out prediction
+- saving artifacts
+- completing the run
+
+For merged benchmark prep, the merge path writes:
+
+- `merge_status.json`
+- `merge_events.jsonl`
+- `summary.json`
 
 ## Recommended Execution Order
 

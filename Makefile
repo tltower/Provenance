@@ -3,6 +3,7 @@ SHELL := /bin/bash
 PROJECT_ROOT := $(abspath .)
 DATA_ROOT ?= /workspace/data
 RUN_ROOT ?= $(PROJECT_ROOT)/analysis/memex_runs
+PE_CDCP_BENCHMARK_ROOT ?= $(DATA_ROOT)/pe_cdcp_span_benchmark
 CANDIDATE_TRANSFER_PATH ?= $(PROJECT_ROOT)/analysis/memex_transfer_seed_10/source_candidates.jsonl
 PE_RAW_ROOT ?= $(DATA_ROOT)/pe_raw
 PE_BENCHMARK_ROOT ?= $(DATA_ROOT)/pe_span_benchmark
@@ -11,7 +12,7 @@ CDCP_BENCHMARK_ROOT ?= $(DATA_ROOT)/cdcp_span_benchmark
 VENV_BIN := $(PROJECT_ROOT)/.venv/bin
 PYTHON := $(VENV_BIN)/python
 
-.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models pe-prepare pe-deberta pe-probe-qwen pe-sae-qwen cdcp-prepare cdcp-deberta cdcp-probe-qwen cdcp-sae-qwen scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer scicite-probe-qwen scicite-sae-qwen scicite-deberta-candidate-transfer scicite-scibert-candidate-transfer scicite-probe-qwen-candidate-transfer
+.PHONY: bootstrap quality run-inventory package-scicite-runs package-scicite-models pe-prepare pe-deberta pe-probe-qwen pe-sae-qwen cdcp-prepare cdcp-deberta cdcp-probe-qwen cdcp-sae-qwen scicite-deberta scicite-scibert scicite-deberta-transfer scicite-scibert-transfer scicite-probe-qwen scicite-sae-qwen scicite-deberta-candidate-transfer scicite-scibert-candidate-transfer scicite-probe-qwen-candidate-transfer pe-cdcp-merge pe-cdcp-concat-deberta pe-cdcp-shared-deberta
 
 bootstrap:
 	bash scripts/bootstrap_remote.sh
@@ -171,3 +172,24 @@ scicite-probe-qwen-candidate-transfer:
 		--probe-dir $(RUN_ROOT)/scicite_probe_qwen25_7b_instruct \
 		--probe-model-name Qwen/Qwen2.5-7B-Instruct \
 		--output-dir $(RUN_ROOT)/scicite_probe_qwen25_7b_instruct/transfer_candidates
+
+pe-cdcp-merge:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/merge_prepared_benchmarks.py \
+		--dataset-input pe=$(PE_BENCHMARK_ROOT) \
+		--dataset-input cdcp=$(CDCP_BENCHMARK_ROOT) \
+		--output-dir $(PE_CDCP_BENCHMARK_ROOT) \
+		--shuffle
+
+pe-cdcp-concat-deberta:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_concat_span_train.py \
+		--dataset-name pe_cdcp_concat \
+		--model-name microsoft/deberta-v3-base \
+		--input-dir $(PE_CDCP_BENCHMARK_ROOT) \
+		--output-dir $(RUN_ROOT)/pe_cdcp_concat_deberta
+
+pe-cdcp-shared-deberta:
+	cd $(PROJECT_ROOT) && $(PYTHON) scripts/run_multi_span_train.py \
+		--dataset-input pe=$(PE_BENCHMARK_ROOT) \
+		--dataset-input cdcp=$(CDCP_BENCHMARK_ROOT) \
+		--model-name microsoft/deberta-v3-base \
+		--output-dir $(RUN_ROOT)/pe_cdcp_shared_deberta

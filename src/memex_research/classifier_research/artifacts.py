@@ -22,12 +22,28 @@ def _file_size(path: Path) -> int:
     return total
 
 
+def _dataset_fields(payload: dict[str, Any] | None) -> tuple[str | None, list[str] | None]:
+    if not isinstance(payload, dict):
+        return None, None
+    dataset = payload.get("dataset")
+    if isinstance(dataset, str) and dataset:
+        return dataset, [dataset]
+    datasets = payload.get("datasets")
+    if isinstance(datasets, list):
+        normalized = [str(item) for item in datasets if str(item)]
+        if normalized:
+            return ", ".join(normalized), normalized
+    return None, None
+
+
 def summarize_run_directory(run_dir: Path) -> dict[str, Any]:
     metrics = _json_if_exists(run_dir / "metrics.json")
     summary = _json_if_exists(run_dir / "summary.json")
     run_config = _json_if_exists(run_dir / "run_config.json")
     diagnostics = _json_if_exists(run_dir / "diagnostics.json")
     transfer_summary = _json_if_exists(run_dir / "transfer" / "summary.json")
+    primary_payload = run_config or metrics or summary or {}
+    dataset, datasets = _dataset_fields(primary_payload)
 
     return {
         "run_name": run_dir.name,
@@ -52,9 +68,10 @@ def summarize_run_directory(run_dir: Path) -> dict[str, Any]:
             if (run_dir / "predictions.jsonl").exists()
             else 0,
         },
-        "task": (run_config or metrics or summary or {}).get("task"),
-        "dataset": (run_config or metrics or summary or {}).get("dataset"),
-        "model_name": (run_config or metrics or summary or {}).get("model_name"),
+        "task": primary_payload.get("task"),
+        "dataset": dataset,
+        "datasets": datasets,
+        "model_name": primary_payload.get("model_name"),
         "metrics": metrics,
         "summary": summary,
         "transfer_summary": transfer_summary,
@@ -66,6 +83,17 @@ def collect_run_inventory(run_root: Path) -> list[dict[str, Any]]:
     if not run_root.exists():
         return []
     return [summarize_run_directory(path) for path in sorted(run_root.iterdir()) if path.is_dir()]
+
+
+def _append_metric_lines(lines: list[str], metrics: dict[str, Any]) -> bool:
+    test_metrics = metrics.get("test_metrics") if isinstance(metrics, dict) else None
+    if isinstance(test_metrics, dict):
+        for key in ("accuracy", "precision_macro", "recall_macro", "f1_macro"):
+            value = test_metrics.get(key)
+            if isinstance(value, (int, float)):
+                lines.append(f"- {key}: `{value:.4f}`")
+        return True
+    return False
 
 
 def _report_lines(rows: list[dict[str, Any]], *, title: str) -> list[str]:
@@ -81,12 +109,15 @@ def _report_lines(rows: list[dict[str, Any]], *, title: str) -> list[str]:
         lines.append(f"- trainer_bytes: `{sizes['trainer_bytes']}`")
         lines.append(f"- transfer_bytes: `{sizes['transfer_bytes']}`")
         metrics = row.get("metrics", {})
-        test_metrics = metrics.get("test_metrics") if isinstance(metrics, dict) else None
-        if isinstance(test_metrics, dict):
-            for key in ("accuracy", "precision_macro", "recall_macro", "f1_macro"):
-                value = test_metrics.get(key)
-                if isinstance(value, (int, float)):
-                    lines.append(f"- {key}: `{value:.4f}`")
+        wrote_primary_metrics = _append_metric_lines(lines, metrics if isinstance(metrics, dict) else {})
+        summary = row.get("summary")
+        if isinstance(summary, dict) and not wrote_primary_metrics:
+            best_metrics = summary.get("best_metrics")
+            if isinstance(best_metrics, dict):
+                best_layer = best_metrics.get("layer")
+                if isinstance(best_layer, int):
+                    lines.append(f"- best_layer: `{best_layer}`")
+                _append_metric_lines(lines, best_metrics)
         transfer_summary = row.get("transfer_summary")
         if isinstance(transfer_summary, dict):
             lines.append(
@@ -108,6 +139,22 @@ def write_run_inventory(output_dir: Path, *, run_root: Path, title: str = "Run I
     (output_dir / "inventory.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
     (output_dir / "inventory.md").write_text("\n".join(_report_lines(rows, title=title)) + "\n")
     return payload
+
+
+def _iter_top_level_report_artifacts(run_dir: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in run_dir.iterdir()
+        if path.is_file() and path.suffix in {".json", ".md"}
+    )
+
+
+def _iter_top_level_model_artifacts(run_dir: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in run_dir.iterdir()
+        if path.is_file() and path.suffix == ".joblib"
+    )
 
 
 def package_run_artifacts(
@@ -132,17 +179,20 @@ def package_run_artifacts(
         for row in selected:
             run_dir = Path(str(row["path"]))
             included: list[str] = []
-            for relative in ("metrics.json", "run_config.json", "diagnostics.json", "report.md"):
-                path = run_dir / relative
-                if include_reports and path.exists():
-                    archive.add(path, arcname=f"{run_dir.name}/{relative}")
-                    included.append(relative)
+            if include_reports:
+                for path in _iter_top_level_report_artifacts(run_dir):
+                    archive.add(path, arcname=f"{run_dir.name}/{path.name}")
+                    included.append(path.name)
             if include_predictions and (run_dir / "predictions.jsonl").exists():
                 archive.add(run_dir / "predictions.jsonl", arcname=f"{run_dir.name}/predictions.jsonl")
                 included.append("predictions.jsonl")
             if include_models and (run_dir / "model").exists():
                 archive.add(run_dir / "model", arcname=f"{run_dir.name}/model")
                 included.append("model/")
+            if include_models:
+                for path in _iter_top_level_model_artifacts(run_dir):
+                    archive.add(path, arcname=f"{run_dir.name}/{path.name}")
+                    included.append(path.name)
             if include_transfer and (run_dir / "transfer").exists():
                 archive.add(run_dir / "transfer", arcname=f"{run_dir.name}/transfer")
                 included.append("transfer/")
