@@ -36,7 +36,7 @@ class SAEReleaseSpec:
 
     def sae_id_candidates_for_layer(self, sae_layer: int) -> tuple[str, ...]:
         return tuple(
-            f"resid_post_layer_{sae_layer}/trainer_{trainer}"
+            f"resid_post_layer_{sae_layer}_trainer_{trainer}"
             for trainer in self.trainer_candidates
         )
 

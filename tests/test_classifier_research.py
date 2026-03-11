@@ -7,6 +7,8 @@ from pathlib import Path
 from memex_research.classifier_research import train_span as train_span_module
 from memex_research.classifier_research.artifacts import package_run_artifacts, write_run_inventory
 from memex_research.classifier_research.datasets import (
+    derive_cdcp_component_labels,
+    extract_cdcp_proposition_offsets,
     normalize_cdcp_component_label,
     normalize_cdcp_span_record,
     normalize_pe_span_record,
@@ -117,6 +119,16 @@ def test_normalize_cdcp_component_label_maps_evidence_like_types() -> None:
     assert normalize_cdcp_component_label("unknown") is None
 
 
+def test_qwen_sae_release_uses_hub_id_format_with_underscores() -> None:
+    release = get_sae_release_spec("Qwen/Qwen2.5-7B-Instruct")
+    assert release.sae_id_candidates_for_layer(3) == (
+        "resid_post_layer_3_trainer_1",
+        "resid_post_layer_3_trainer_0",
+        "resid_post_layer_3_trainer_2",
+        "resid_post_layer_3_trainer_3",
+    )
+
+
 def test_normalize_cdcp_span_record_labels_claim_evidence_and_premise_tokens() -> None:
     text = "Cats are mammals. Experts observed purring. Therefore cats make good pets."
     record = normalize_cdcp_span_record(
@@ -131,6 +143,56 @@ def test_normalize_cdcp_span_record_labels_claim_evidence_and_premise_tokens() -
     assert "EVIDENCE" in record["labels"]
     assert "PREMISE" in record["labels"]
     assert len(record["tokens"]) == len(record["labels"])
+
+
+def test_extract_cdcp_proposition_offsets_supports_hf_nested_schema() -> None:
+    row = {
+        "propositions": {
+            "start": [0, 18, 44],
+            "end": [17, 43, 73],
+            "label": [4, 2, 1],
+            "url": ["", "", ""],
+        }
+    }
+    assert extract_cdcp_proposition_offsets(row) == ([0, 18, 44], [17, 43, 73])
+
+
+def test_derive_cdcp_component_labels_uses_relation_roles_from_hf_schema() -> None:
+    text = "Cats are mammals. Experts observed purring. Therefore cats make good pets."
+    row = {
+        "id": "cdcp-hf-1",
+        "text": text,
+        "propositions": {
+            "start": [0, 18, 44],
+            "end": [17, 43, len(text)],
+            "label": [4, 2, 1],
+            "url": ["", "", ""],
+        },
+        "relations": {
+            "head": [2, 2],
+            "tail": [0, 1],
+            "label": [0, 1],
+        },
+    }
+
+    labels = derive_cdcp_component_labels(
+        row,
+        proposition_label_names=["fact", "policy", "reference", "testimony", "value"],
+        relation_label_names=["evidence", "reason"],
+    )
+
+    assert labels == ["evidence", "reason", "policy"]
+
+    record = normalize_cdcp_span_record(
+        "cdcp-hf-1",
+        text,
+        proposition_starts=row["propositions"]["start"],
+        proposition_ends=row["propositions"]["end"],
+        proposition_labels=labels,
+    )
+    assert "CLAIM" in record["labels"]
+    assert "EVIDENCE" in record["labels"]
+    assert "PREMISE" in record["labels"]
 
 
 def test_infer_span_label_list_uses_only_labels_present_in_records() -> None:

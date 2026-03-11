@@ -4,7 +4,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from memex_research.classifier_research.datasets import normalize_cdcp_span_record
+from memex_research.classifier_research.datasets import (
+    derive_cdcp_component_labels,
+    extract_cdcp_proposition_offsets,
+    normalize_cdcp_span_record,
+)
 from memex_research.classifier_research.splits import ensure_dev_split, write_split_jsonl
 from memex_research.classifier_research.tasks import SpanRoleExample
 
@@ -37,31 +41,20 @@ def _extract_text(row: dict[str, Any]) -> str:
     raise KeyError(f"Unable to find document text field in CDCP row with keys: {sorted(row)}")
 
 
-def _extract_offsets(row: dict[str, Any]) -> tuple[list[int], list[int]]:
-    starts = row.get("proposition_starts")
-    ends = row.get("proposition_ends")
-    if isinstance(starts, list) and isinstance(ends, list):
-        return [int(value) for value in starts], [int(value) for value in ends]
-
-    spans = row.get("proposition_offsets") or row.get("prop_offsets")
-    if isinstance(spans, list):
-        parsed: list[tuple[int, int]] = []
-        for item in spans:
-            if isinstance(item, (list, tuple)) and len(item) == 2:
-                parsed.append((int(item[0]), int(item[1])))
-            elif isinstance(item, dict) and {"start", "end"} <= set(item):
-                parsed.append((int(item["start"]), int(item["end"])))
-        if parsed:
-            return [start for start, _end in parsed], [end for _start, end in parsed]
-
-    raise KeyError(f"Unable to find proposition offsets in CDCP row with keys: {sorted(row)}")
-
-
-def _extract_labels(row: dict[str, Any]) -> list[str]:
-    labels = row.get("proposition_labels") or row.get("prop_labels")
-    if isinstance(labels, list):
-        return [str(label) for label in labels]
-    raise KeyError(f"Unable to find proposition labels in CDCP row with keys: {sorted(row)}")
+def _extract_nested_class_label_names(
+    split: Any,
+    *,
+    field_name: str,
+) -> list[str] | None:
+    try:
+        nested_feature = split.features[field_name].feature
+        label_feature = nested_feature["label"]
+        names = getattr(label_feature, "names", None)
+    except (AttributeError, KeyError, TypeError):
+        return None
+    if names is None:
+        return None
+    return [str(name) for name in names]
 
 
 def _extract_doc_id(row: dict[str, Any], *, split_name: str, row_index: int) -> str:
@@ -81,7 +74,10 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dataset = _require_datasets()
-    dataset = load_dataset(args.dataset_name)
+    dataset = load_dataset(args.dataset_name, trust_remote_code=True)
+    first_split = dataset[next(iter(dataset))]
+    proposition_label_names = _extract_nested_class_label_names(first_split, field_name="propositions")
+    relation_label_names = _extract_nested_class_label_names(first_split, field_name="relations")
 
     split_rows: dict[str, list[SpanRoleExample]] = {}
     for split_name, split in dataset.items():
@@ -89,8 +85,12 @@ def main() -> None:
         rows: list[SpanRoleExample] = []
         for row_index, row in enumerate(split):
             text = _extract_text(row)
-            starts, ends = _extract_offsets(row)
-            labels = _extract_labels(row)
+            starts, ends = extract_cdcp_proposition_offsets(row)
+            labels = derive_cdcp_component_labels(
+                row,
+                proposition_label_names=proposition_label_names,
+                relation_label_names=relation_label_names,
+            )
             rows.append(
                 normalize_cdcp_span_record(
                     _extract_doc_id(row, split_name=normalized_split, row_index=row_index),

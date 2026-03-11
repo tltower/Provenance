@@ -102,6 +102,101 @@ def normalize_cdcp_component_label(label: str) -> str | None:
     return None
 
 
+def _resolve_cdcp_label_name(
+    value: Any,
+    *,
+    label_names: Sequence[str] | None = None,
+) -> str:
+    if isinstance(value, int):
+        if label_names is None:
+            return str(value)
+        if value < 0 or value >= len(label_names):
+            raise ValueError(f"CDCP label index {value} outside range 0..{len(label_names) - 1}")
+        return str(label_names[value]).strip().lower()
+    return str(value).strip().lower()
+
+
+def extract_cdcp_proposition_offsets(row: Mapping[str, Any]) -> tuple[list[int], list[int]]:
+    starts = row.get("proposition_starts")
+    ends = row.get("proposition_ends")
+    if isinstance(starts, list) and isinstance(ends, list):
+        return [int(value) for value in starts], [int(value) for value in ends]
+
+    spans = row.get("proposition_offsets") or row.get("prop_offsets")
+    if isinstance(spans, list):
+        parsed: list[tuple[int, int]] = []
+        for item in spans:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                parsed.append((int(item[0]), int(item[1])))
+            elif isinstance(item, dict) and {"start", "end"} <= set(item):
+                parsed.append((int(item["start"]), int(item["end"])))
+        if parsed:
+            return [start for start, _end in parsed], [end for _start, end in parsed]
+
+    propositions = row.get("propositions")
+    if isinstance(propositions, Mapping):
+        nested_starts = propositions.get("start")
+        nested_ends = propositions.get("end")
+        if isinstance(nested_starts, list) and isinstance(nested_ends, list):
+            return [int(value) for value in nested_starts], [int(value) for value in nested_ends]
+
+    raise KeyError(f"Unable to find proposition offsets in CDCP row with keys: {sorted(row)}")
+
+
+def derive_cdcp_component_labels(
+    row: Mapping[str, Any],
+    *,
+    proposition_label_names: Sequence[str] | None = None,
+    relation_label_names: Sequence[str] | None = None,
+) -> list[str]:
+    raw_labels = row.get("proposition_labels") or row.get("prop_labels")
+    if not isinstance(raw_labels, list):
+        propositions = row.get("propositions")
+        if isinstance(propositions, Mapping):
+            raw_labels = propositions.get("label")
+    if not isinstance(raw_labels, list):
+        raise KeyError(f"Unable to find proposition labels in CDCP row with keys: {sorted(row)}")
+
+    derived_labels = [
+        _resolve_cdcp_label_name(label, label_names=proposition_label_names)
+        for label in raw_labels
+    ]
+
+    relations = row.get("relations")
+    if not isinstance(relations, Mapping):
+        return derived_labels
+
+    relation_heads = relations.get("head")
+    relation_tails = relations.get("tail")
+    relation_labels = relations.get("label")
+    if not (
+        isinstance(relation_heads, list)
+        and isinstance(relation_tails, list)
+        and isinstance(relation_labels, list)
+    ):
+        return derived_labels
+
+    # In the Hugging Face CDCP release, proposition types omit relation roles.
+    # The supported proposition sits in `tail`, so use the relation label there
+    # to recover `reason` / `evidence` supervision when available.
+    for _head_idx, tail_idx, relation_label in zip(
+        relation_heads, relation_tails, relation_labels, strict=True
+    ):
+        relation_name = _resolve_cdcp_label_name(
+            relation_label,
+            label_names=relation_label_names,
+        )
+        source_idx = int(tail_idx)
+        if relation_name not in {"reason", "evidence"}:
+            continue
+        if source_idx < 0 or source_idx >= len(derived_labels):
+            raise ValueError(
+                f"CDCP relation tail index {source_idx} outside range 0..{len(derived_labels) - 1}"
+            )
+        derived_labels[source_idx] = relation_name
+    return derived_labels
+
+
 def tokenize_with_offsets(text: str) -> list[tuple[str, int, int]]:
     return [(match.group(0), match.start(), match.end()) for match in TOKEN_RE.finditer(text)]
 
